@@ -40,24 +40,29 @@ def add_localized_fields(model):
     """
     localized_fields = dict()
     translation_opts = translator.get_options_for_model(model)
+
     for field_name in translation_opts.fields:
         localized_fields[field_name] = list()
         for l in settings.LANGUAGES:
             # Create a dynamic translation field
             translation_field = create_translation_field(
                 model=model, field_name=field_name, lang=l[0])
+
             # Construct the name for the localized field
             localized_field_name = build_localized_fieldname(field_name, l[0])
+
             # Check if the model already has a field by that name
             if hasattr(model, localized_field_name):
                 raise ValueError(
                     "Error adding translation field. Model '%s' already "
                     "contains a field named '%s'." % (
                         model._meta.object_name, localized_field_name))
+
             # This approach implements the translation fields as full valid
             # django model fields and therefore adds them via add_to_class
             model.add_to_class(localized_field_name, translation_field)
             localized_fields[field_name].append(localized_field_name)
+
     return localized_fields
 
 
@@ -152,18 +157,21 @@ class Translator(object):
             for related_obj in model._meta.get_all_related_objects():
                 delete_cache_fields(related_obj.model)
 
-        model_fallback_values = getattr(
-            translation_opts, 'fallback_values', None)
-        for field_name in translation_opts.fields:
-            if model_fallback_values is None:
-                field_fallback_value = None
-            elif isinstance(model_fallback_values, dict):
-                field_fallback_value = model_fallback_values.get(
-                    field_name, None)
-            else:
-                field_fallback_value = model_fallback_values
-            setattr(model, field_name, TranslationFieldDescriptor(
-                field_name, fallback_value=field_fallback_value))
+            model_fallback_values = getattr(
+                translation_opts, 'fallback_values', None)
+            for field_name in translation_opts.fields:
+                if model_fallback_values is None:
+                    field_fallback_value = None
+                elif isinstance(model_fallback_values, dict):
+                    field_fallback_value = model_fallback_values.get(
+                        field_name, None)
+                else:
+                    field_fallback_value = model_fallback_values
+
+                # Apply descriptor to translation field
+                setattr(model, field_name, TranslationFieldDescriptor(
+                    field=model._meta.get_field(field_name),
+                    fallback_value=field_fallback_value))
 
         #signals.pre_init.connect(translated_model_initializing, sender=model,
                                  #weak=False)

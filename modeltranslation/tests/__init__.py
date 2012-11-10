@@ -116,30 +116,34 @@ class ModeltranslationTest(ModeltranslationTestBase):
 
     def test_set_translation(self):
         self.failUnlessEqual(get_language(), 'de')
-        # First create an instance of the test model to play with
-        title1_de = "title de"
-        title1_en = "title en"
-        title2_de = "title2 de"
-        inst1 = TestModel(title_en=title1_en, text="Testtext")
-        inst1.title = title1_de
-        inst2 = TestModel(title=title2_de, text="Testtext")
-        inst1.save()
-        inst2.save()
 
-        self.failUnlessEqual(inst1.title, title1_de)
-        self.failUnlessEqual(inst1.title_en, title1_en)
+        n = TestModel(title='title2 de')
+        n.save()
+        self.failUnlessEqual(n.title, '')
+        self.failUnlessEqual(n.title_de, 'title2 de')
+        self.failUnlessEqual(n.title_en, None)
 
-        self.failUnlessEqual(inst2.title, title2_de)
-        self.failUnlessEqual(inst2.title_en, None)
+        n.delete()
 
-        del inst1
-        del inst2
+        n = TestModel(title_en='title en')
+        n.title = 'title de'
+        n.save()
+        #print n.__dict__
+        self.failUnlessEqual(n.title, 'title de')
+        # Is that what we want?
+        #self.assertRaises(KeyError, lambda: n.__dict__['title'])
+        self.failUnlessEqual(n.title_de, 'title de')
+        self.failUnlessEqual(n.title_en, 'title en')
+
+        n.delete()
 
         # Check that the translation fields are correctly saved and provide the
         # correct value when retrieving them again.
-        n = TestModel.objects.get(title=title1_de)
-        self.failUnlessEqual(n.title, title1_de)
-        self.failUnlessEqual(n.title_en, title1_en)
+        n = TestModel.objects.get(title='title de')
+        self.failUnlessEqual(n.title, 'title de')
+        self.failUnlessEqual(n.title_en, 'title en')
+
+        n.delete()
 
     def test_titleonly(self):
         title1_de = "title de"
