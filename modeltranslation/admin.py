@@ -20,7 +20,7 @@ class TranslationBaseModelAdmin(BaseModelAdmin):
 
     def __init__(self, *args, **kwargs):
         super(TranslationBaseModelAdmin, self).__init__(*args, **kwargs)
-        self.trans_opts = translator.get_options_for_model(self.model)
+        self.trans_opts = translator._get_options_for_model(self.model)
         self._patch_prepopulated_fields()
 
     def _declared_fieldsets(self):
