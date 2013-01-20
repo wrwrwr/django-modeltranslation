@@ -34,34 +34,59 @@ class FieldsAggregationMetaClass(type):
 
 class TranslationOptions(object):
     """
-    The TranslationOptions object is used to specify the fields to translate.
+    Translatable fields are declared by registering a model using
+    ``TranslationOptions`` class with appropriate ``fields`` attribute.
+    Model-specific fallback values adn languages can also be given as class
+    attributes.
 
-    The options are registered in combination with a model class at the
-    ``modeltranslation.translator.translator`` instance.
-
-    It caches the content type of the translated model for faster lookup later
-    on.
+    Options' instances hold info about fields translated for a model and all
+    its superclasses.
+    The ``fields`` attribute lists fields that are handled in the model's
+    database table (those inherited from abstract superclasses, unless there
+    is a concrete superclass in between in the inheritance chain);
+    ``localized_fieldnames`` holds a mapping from original field names to
+    their translation clones. In some cases we'd like to know all translation
+    fields available for a model, including those inherited from concrete
+    supermodels (e.g. admin forms) -- attributes prefixed with ``inherited``
+    include those.
     """
-
     __metaclass__ = FieldsAggregationMetaClass
-    fields = ()
 
-    def __init__(self, *args, **kwargs):
-        self.localized_fieldnames = []
+    def __init__(self, model):
+        self.model = model
+        self.registered = False
+        # Models registered with the same TranslationOptions class may inherit
+        # different fields, so create a copy of ``fields`` on instance.
+        self.fields = set(self.fields)
+        self.inherited_fields = set(self.fields)
+        self.localized_fieldnames = {}
+        self.inherited_localized_fieldnames = {}
+
+    def update(self, other):
+        if other.model._meta.abstract:
+            # ``fields`` and ``localized_fields`` don't contain fields
+            # from conrete supermodels.
+            self.fields.update(other.fields)
+            self.localized_fieldnames.update(other.localized_fieldnames)
+        self.inherited_fields.update(other.inherited_fields)
+        self.inherited_localized_fieldnames.update(
+            other.inherited_localized_fieldnames)
+
+    def __str__(self):
+        return '%s: %s + %s' % (self.__class__.__name__, tuple(self.fields),
+                                tuple(self.inherited_fields - self.fields))
 
 
-def add_localized_fields(model):
+def add_localized_fields(model, fields):
     """
     Monkey patches the original model class to provide additional fields for
-    every language. Only do that for fields which are defined in the
-    translation options of the model.
+    every language.
 
     Returns a dict mapping the original fieldname to a list containing the
     names of the localized fields created for the original field.
     """
     localized_fields = dict()
-    translation_opts = translator.get_options_for_model(model)
-    for field_name in translation_opts.fields:
+    for field_name in fields:
         localized_fields[field_name] = list()
         for l in settings.LANGUAGES:
             # Create a dynamic translation field
@@ -156,10 +181,10 @@ class Translator(object):
     registered with the Translator using the register() method.
     """
     def __init__(self):
-        # model_class class -> translation_opts instance
+        # model_class class -> ``TranslationOptions`` instance
         self._registry = {}
 
-    def register(self, model_or_iterable, translation_opts, **options):
+    def register(self, model_or_iterable, opts_class=None, **options):
         """
         Registers the given model(s) with the given translation options.
 
@@ -172,37 +197,20 @@ class Translator(object):
             model_or_iterable = [model_or_iterable]
 
         for model in model_or_iterable:
-            if model in self._registry:
+            # Find inherited fields and create options instance for the model.
+            opts = self._get_options_for_model(model, opts_class, **options)
+
+            # Mark the object explicitly as registered -- registry caches
+            # options of all models, registered or not.
+            if opts.registered:
                 raise AlreadyRegistered('The model %s is already registered '
                                         'for translation' % model.__name__)
+            opts.registered = True
 
-            # If we got **options then dynamically construct a subclass of
-            # translation_opts with those **options.
-            if options:
-                # For reasons I don't quite understand, without a __module__
-                # the created class appears to "live" in the wrong place,
-                # which causes issues later on.
-                options['__module__'] = __name__
-                translation_opts = type(
-                    "%sTranslationOptions" % model.__name__,
-                    (translation_opts,), options)
-
-            # Store the translation class associated to the model
-            self._registry[model] = translation_opts
-
-            # Add the localized fields to the model and store the names of
-            # these fields in the model's translation options for faster lookup
-            # later on.
-            translation_opts.localized_fieldnames = add_localized_fields(model)
-
-            # Create a reverse dict mapping the localized_fieldnames to the
-            # original fieldname
-            rev_dict = dict()
-            for orig_name, loc_names in \
-                    translation_opts.localized_fieldnames.items():
-                for ln in loc_names:
-                    rev_dict[ln] = orig_name
-            translation_opts.localized_fieldnames_rev = rev_dict
+            # Add the localized fields to the model.
+            localized_fieldnames = add_localized_fields(model, opts.fields)
+            opts.localized_fieldnames.update(localized_fieldnames)
+            opts.inherited_localized_fieldnames.update(localized_fieldnames)
 
             # Delete all fields cache for related model (parent and children)
             for related_obj in model._meta.get_all_related_objects():
@@ -216,10 +224,10 @@ class Translator(object):
 
             # Substitute original field with descriptor
             model_fallback_values = getattr(
-                translation_opts, 'fallback_values', None)
+                opts, 'fallback_values', None)
             model_fallback_languages = getattr(
-                translation_opts, 'fallback_languages', None)
-            for field_name in translation_opts.fields:
+                opts, 'fallback_languages', None)
+            for field_name in opts.fields:
                 if model_fallback_values is None:
                     field_fallback_value = None
                 elif isinstance(model_fallback_values, dict):
@@ -245,48 +253,43 @@ class Translator(object):
         if isinstance(model_or_iterable, ModelBase):
             model_or_iterable = [model_or_iterable]
         for model in model_or_iterable:
-            if model not in self._registry:
-                raise NotRegistered('The model "%s" is not registered for '
-                                    'translation' % model.__name__)
-            del self._registry[model]
+            self.get_options_for_model(model).registered = False
+
+    def _get_options_for_model(self, model, opts_class=None, **options):
+        """
+        Returns an instance of translation options with translated fields
+        defined for the ``model`` and inherited from superclasses.
+        """
+        if model not in self._registry:
+            # Create a new type for backwards compatibility.
+            opts = type("%sTranslationOptions" % model.__name__,
+                        (opts_class or TranslationOptions,), options)(model)
+
+            # Fields for translation may be inherited from abstract
+            # superclasses, so we need to look at all parents.
+            for base in model.__bases__:
+                if not hasattr(base, '_meta'):
+                    # Things without _meta aren't functional models, so they're
+                    # uninteresting parents.
+                    continue
+                opts.update(self._get_options_for_model(base))
+
+            # Cache options for all models -- we may want to compute options
+            # of registered subclasses of unregistered models.
+            self._registry[model] = opts
+
+        return self._registry[model]
 
     def get_options_for_model(self, model):
         """
-        Returns the translation options for the given ``model``. If the
-        ``model`` is not registered a ``NotRegistered`` exception is raised.
+        Thin wrapper around ``_get_options_for_model`` to preserve the
+        semantic of throwing exception for models not directly registered.
         """
-        try:
-            return self._registry[model]
-        except KeyError:
-            # Try to find a localized parent model and build a dedicated
-            # translation options class with the parent info.
-            # Useful when a ModelB inherits from ModelA and only ModelA fields
-            # are localized. No need to register ModelB.
-            fields = set()
-            localized_fieldnames = {}
-            localized_fieldnames_rev = {}
-            for parent in model._meta.parents.keys():
-                if parent in self._registry:
-                    trans_opts = self._registry[parent]
-                    fields.update(trans_opts.fields)
-                    localized_fieldnames.update(
-                        trans_opts.localized_fieldnames)
-                    localized_fieldnames_rev.update(
-                        trans_opts.localized_fieldnames_rev)
-            if fields and localized_fieldnames and localized_fieldnames_rev:
-                options = {
-                    '__module__': __name__,
-                    'fields': tuple(fields),
-                    'localized_fieldnames': localized_fieldnames,
-                    'localized_fieldnames_rev': localized_fieldnames_rev
-                }
-                translation_opts = type(
-                    "%sTranslation" % model.__name__,
-                    (TranslationOptions,), options)
-                # delete_cache_fields(model)
-                return translation_opts
+        opts = self._get_options_for_model(model)
+        if not opts.registered:
             raise NotRegistered('The model "%s" is not registered for '
                                 'translation' % model.__name__)
+        return opts
 
 
 # This global object represents the singleton translator object
