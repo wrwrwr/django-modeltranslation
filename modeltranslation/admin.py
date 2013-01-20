@@ -43,7 +43,7 @@ class TranslationBaseModelAdmin(BaseModelAdmin):
         return field
 
     def patch_translation_field(self, db_field, field, **kwargs):
-        if db_field.name in self.trans_opts.fields:
+        if db_field.name in self.trans_opts.inherited_fields:
             if field.required:
                 field.required = False
                 field.blank = True
@@ -85,8 +85,8 @@ class TranslationBaseModelAdmin(BaseModelAdmin):
             exclude = tuple()
         if exclude:
             exclude_new = tuple(exclude)
-            return exclude_new + tuple(self.trans_opts.fields)
-        return tuple(self.trans_opts.fields)
+            return exclude_new + tuple(self.trans_opts.inherited_fields)
+        return tuple(self.trans_opts.inherited_fields)
 
     def replace_orig_field(self, option):
         """
@@ -96,9 +96,9 @@ class TranslationBaseModelAdmin(BaseModelAdmin):
         Returns a new list with replaced fields. If `option` contains no
         registered fields, it is returned unmodified.
 
-        >>> print self.trans_opts.fields
+        >>> print self.trans_opts.inherited_fields
         ('title',)
-        >>> get_translation_fields(self.trans_opts.fields[0])
+        >>> get_translation_fields(self.trans_opts.inherited_fields[0])
         ['title_de', 'title_en']
         >>> self.replace_orig_field(['title', 'url'])
         ['title_de', 'title_en', 'url']
@@ -119,11 +119,11 @@ class TranslationBaseModelAdmin(BaseModelAdmin):
         if option:
             option_new = list(option)
             for opt in option:
-                if opt in self.trans_opts.fields:
+                if opt in self.trans_opts.inherited_fields:
                     index = option_new.index(opt)
                     option_new[index:index + 1] = get_translation_fields(opt)
                 elif isinstance(opt, (tuple, list)) and (
-                        [o for o in opt if o in self.trans_opts.fields]):
+                        [o for o in opt if o in self.trans_opts.inherited_fields]):
                     index = option_new.index(opt)
                     option_new[index:index + 1] = self.replace_orig_field(opt)
             option = option_new
@@ -142,7 +142,7 @@ class TranslationBaseModelAdmin(BaseModelAdmin):
         if self.prepopulated_fields:
             prepopulated_fields_new = dict(self.prepopulated_fields)
             for (k, v) in self.prepopulated_fields.items():
-                if v[0] in self.trans_opts.fields:
+                if v[0] in self.trans_opts.inherited_fields:
                     translation_fields = get_translation_fields(v[0])
                     prepopulated_fields_new[k] = tuple([translation_fields[0]])
             self.prepopulated_fields = prepopulated_fields_new
@@ -198,7 +198,7 @@ class TranslationBaseModelAdmin(BaseModelAdmin):
             excl_languages = exclude_languages
         exclude = []
         for orig_fieldname, translation_fields in \
-                self.trans_opts.localized_fieldnames.iteritems():
+                self.trans_opts.inherited_localized_fieldnames.iteritems():
             for tfield in translation_fields:
                 language = tfield.split('_')[-1]
                 if language in excl_languages and tfield not in exclude:
@@ -216,7 +216,7 @@ class TranslationAdmin(TranslationBaseModelAdmin, admin.ModelAdmin):
             editable_new = list(self.list_editable)
             display_new = list(self.list_display)
             for field in self.list_editable:
-                if field in self.trans_opts.fields:
+                if field in self.trans_opts.inherited_fields:
                     index = editable_new.index(field)
                     display_index = display_new.index(field)
                     translation_fields = get_translation_fields(field)
