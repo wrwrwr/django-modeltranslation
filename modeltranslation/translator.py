@@ -17,6 +17,10 @@ class NotRegistered(Exception):
     pass
 
 
+class DescendantRegistered(Exception):
+    pass
+
+
 class FieldsAggregationMetaClass(type):
     """
     Meta class to handle custom inheritance of fields between classes.
@@ -180,7 +184,7 @@ class Translator(object):
     registered with the Translator using the register() method.
     """
     def __init__(self):
-        # model_class class -> ``TranslationOptions`` instance
+        # All seen models (model class -> ``TranslationOptions`` instance).
         self._registry = {}
 
     def register(self, model_or_iterable, opts_class=None, **options):
@@ -189,21 +193,34 @@ class Translator(object):
 
         The model(s) should be Model classes, not instances.
 
-        If a model is already registered for translation, this will raise
-        AlreadyRegistered.
+        Fields declared for translation on a base class are inherited by
+        subclasses. If the model or one of its subclasses is already
+        registered for translation, this will raise an exception.
         """
         if isinstance(model_or_iterable, ModelBase):
             model_or_iterable = [model_or_iterable]
 
         for model in model_or_iterable:
+            # Ensure that a base is not registered after a subclass (_registry
+            # is closed with respect to taking bases, so we can just check if
+            # we've seen the model).
+            if model in self._registry:
+                if self._registry[model].registered:
+                    raise AlreadyRegistered(
+                        'Model "%s" is already registered for translation' %
+                        model.__name__)
+                else:
+                    descendants = [d.__name__ for d in self._registry.keys()
+                                   if issubclass(d, model) and d != model]
+                    raise DescendantRegistered(
+                        'Model "%s" cannot be registered after its subclass'
+                        ' "%s"' % (model.__name__, descendants[0]))
+
             # Find inherited fields and create options instance for the model.
             opts = self._get_options_for_model(model, opts_class, **options)
 
             # Mark the object explicitly as registered -- registry caches
             # options of all models, registered or not.
-            if opts.registered:
-                raise AlreadyRegistered('The model %s is already registered '
-                                        'for translation' % model.__name__)
             opts.registered = True
 
             # Add the localized fields to the model.
@@ -247,12 +264,27 @@ class Translator(object):
         """
         Unregisters the given model(s).
 
-        If a model isn't already registered, this will raise NotRegistered.
+        If a model isn't registered, this will raise NotRegistered. If one of
+        its subclasses is registered, DescendantRegistered will be raised.
         """
         if isinstance(model_or_iterable, ModelBase):
             model_or_iterable = [model_or_iterable]
         for model in model_or_iterable:
-            self.get_options_for_model(model).registered = False
+            # Check if the model is actually registered.
+            opts = self.get_options_for_model(model)
+            # Invalidate all submodels options and forget about
+            # the model itself.
+            for desc, desc_opts in self._registry.items():
+                if not issubclass(desc, model):
+                    continue
+                if model != desc and desc_opts.registered:
+                    # Allowing to unregister a base would necessitate
+                    # repatching all submodels.
+                    raise DescendantRegistered(
+                        'You need to unregister descendant "%s" before'
+                        ' unregistering its base "%s"' %
+                        (desc.__name__, model.__name__))
+                del self._registry[desc]
 
     def _get_options_for_model(self, model, opts_class=None, **options):
         """
