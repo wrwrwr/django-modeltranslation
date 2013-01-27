@@ -13,18 +13,12 @@ from modeltranslation.utils import build_localized_fieldname, get_language
 from modeltranslation import settings
 
 
-_registry = {}
-
-
 def get_translatable_fields_for_model(model):
-    from modeltranslation import translator
-    if model not in _registry:
-        try:
-            _registry[model] = dict(
-                translator.translator.get_options_for_model(model).localized_fieldnames)
-        except translator.NotRegistered:
-            _registry[model] = None
-    return _registry[model]
+    from modeltranslation.translator import NotRegistered, translator
+    try:
+        return translator.get_options_for_model(model).localized_fieldnames
+    except NotRegistered:
+        return None
 
 
 def rewrite_lookup_key(model, lookup_key):
