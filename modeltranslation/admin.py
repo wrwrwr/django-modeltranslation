@@ -37,6 +37,7 @@ class TranslationBaseModelAdmin(BaseModelAdmin):
     declared_fieldsets = property(_declared_fieldsets)
 
     def formfield_for_dbfield(self, db_field, **kwargs):
+        raise 'MultiWidget with translation fields.'
         field = super(TranslationBaseModelAdmin, self).formfield_for_dbfield(
             db_field, **kwargs)
         self.patch_translation_field(db_field, field, **kwargs)
