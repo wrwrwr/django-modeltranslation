@@ -27,10 +27,13 @@ class FieldsAggregationMetaClass(type):
     """
     def __new__(cls, name, bases, attrs):
         attrs['fields'] = set(attrs.get('fields', ()))
+        attrs['admin_fields'] = set(attrs.get('admin_fields', ()))
         for base in bases:
             if isinstance(base, FieldsAggregationMetaClass):
                 attrs['fields'].update(base.fields)
+                attrs['admin_fields'].update(base.admin_fields)
         attrs['fields'] = tuple(attrs['fields'])
+        attrs['admin_fields'] = tuple(attrs['admin_fields'])
         return super(FieldsAggregationMetaClass, cls).__new__(cls, name,
                                                               bases, attrs)
 
@@ -39,19 +42,22 @@ class TranslationOptions(object):
     """
     Translatable fields are declared by registering a model using
     ``TranslationOptions`` class with appropriate ``fields`` attribute.
-    Model-specific fallback values adn languages can also be given as class
+    Sometimes you may want non-translated fields to display translation
+    forms in admin (combined with providing your own routines to save
+    translations) -- declare them as ``admin_fields``.
+    Model-specific fallback values and languages can also be given as class
     attributes.
 
     Options' instances hold info about fields translated for a model and all
-    its superclasses.
-    The ``fields`` attribute lists fields that are handled in the model's
-    database table (those inherited from abstract superclasses, unless there
-    is a concrete superclass in between in the inheritance chain);
-    ``localized_fieldnames`` holds a mapping from original field names to
-    their translation clones. In some cases we'd like to know all translation
-    fields available for a model, including those inherited from concrete
-    supermodels (e.g. admin forms) -- attributes prefixed with ``inherited``
-    include those.
+    its superclasses. The ``fields`` attribute lists fields that are handled
+    in the model's database table (those inherited from abstract superclasses,
+    unless there is a concrete superclass in between in the inheritance chain);
+    ``localized_fieldnames`` holds a mapping from original field names to their
+    translation clones. In some cases we'd like to know all translation fields
+    available for a model, including those inherited from concrete supermodels
+     -- attributes prefixed with ``inherited`` include those. Lastly attributes
+    prefixed with ``admin`` hold info about all fields (possibly not directly
+    translated on the model) to be handled as translated in admin forms.
     """
     __metaclass__ = FieldsAggregationMetaClass
 
@@ -62,8 +68,10 @@ class TranslationOptions(object):
         # different fields, so create a copy of ``fields`` on instance.
         self.fields = set(self.fields)
         self.inherited_fields = set(self.fields)
+        self.admin_fields = self.fields | set(self.admin_fields)
         self.localized_fieldnames = {}
         self.inherited_localized_fieldnames = {}
+        self.admin_localized_fieldnames = {}
 
     def update(self, other):
         if other.model._meta.abstract:
@@ -74,10 +82,15 @@ class TranslationOptions(object):
         self.inherited_fields.update(other.inherited_fields)
         self.inherited_localized_fieldnames.update(
             other.inherited_localized_fieldnames)
+        self.admin_fields.update(other.admin_fields)
+        self.admin_localized_fieldnames.update(
+            other.admin_localized_fieldnames)
 
     def __str__(self):
-        return '%s: %s + %s' % (self.__class__.__name__, tuple(self.fields),
-                                tuple(self.inherited_fields - self.fields))
+        return '%s: %s + %s [+ %s]' % (
+            self.__class__.__name__, tuple(self.fields),
+            tuple(self.inherited_fields - self.fields),
+            tuple(self.admin_fields - self.inherited_fields))
 
 
 def add_localized_fields(model, fields):
