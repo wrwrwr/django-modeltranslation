@@ -5,11 +5,14 @@ django-linguo by Zach Mathew
 https://github.com/zmathew/django-linguo
 """
 from django.db import models
+from django.db.models import Q
 from django.db.models.fields.related import RelatedField
+from django.db.models.sql.constants import QUERY_TERMS
 from django.db.models.sql.where import Constraint
 from django.utils.tree import Node
 
-from modeltranslation.utils import build_localized_fieldname, get_language
+from modeltranslation.utils import (build_localized_fieldname, get_language,
+                                    resolution_order)
 from modeltranslation import settings
 
 
@@ -27,7 +30,9 @@ def get_translatable_fields_for_model(model):
     return _registry[model]
 
 
-def rewrite_lookup_key(model, lookup_key):
+def rewrite_lookup_key(model, lookup_key, language=None):
+    if language is None:
+        language = get_language()
     translatable_fields = get_translatable_fields_for_model(model)
     if translatable_fields is not None:
         pieces = lookup_key.split('__')
@@ -35,7 +40,7 @@ def rewrite_lookup_key(model, lookup_key):
         # we want to rewrite it to the actual field name
         # For example, we want to rewrite "name__startswith" to "name_fr__startswith"
         if pieces[0] in translatable_fields:
-            lookup_key = build_localized_fieldname(pieces[0], get_language())
+            lookup_key = build_localized_fieldname(pieces[0], language)
 
             remaining_lookup = '__'.join(pieces[1:])
             if remaining_lookup:
@@ -56,6 +61,51 @@ def rewrite_lookup_key(model, lookup_key):
     return lookup_key
 
 
+def _rewrite_with_fallbacks(model, lookup_fields, lookup_type, value, langs):
+    fields = rewrite_lookup_key(model, lookup_fields, langs[0])
+    isnull = '%s__isnull' % fields
+    lookup = '%s__%s' % (fields, lookup_type)
+    q = Q(**{isnull: False}) & Q(**{lookup: value})
+    if len(langs) > 1:
+        empty = Q(**{isnull: True}) | Q(**{fields: ''})
+        fallback = _rewrite_with_fallbacks(model, lookup_fields, lookup_type,
+                                           value, langs[1:])
+        q |= empty & fallback
+    return q
+
+def rewrite_with_fallbacks(model, lookup, value):
+    """
+    Turns a lookup into a Q object comparing against the first language for
+    which there is a non-empty value.
+
+    Example:
+
+        Suppose that the current language 'de' should fall back to 'en' and
+        then to 'es', then:
+
+            rewrite_with_fallbacks(model, 'title__startswith', 'foo')
+
+        would give:
+
+            title_de starts with 'foo' or (title_de is empty, but
+                (title_en starts with 'foo' or (title_en is empty, but
+                    (title_es starts with 'foo')))
+
+        represented by a Q object, with value comparisons strenthened by
+        a non-null check to handle negation.
+    """
+    parts = lookup.rsplit('__', 1)
+    lookup_fields = parts[0]
+    lookup_type = 'exact'
+    if len(parts) > 1 and parts[1] in QUERY_TERMS:
+        lookup_type = parts[1]
+    if lookup_type == 'isnull':
+        # Would require handling negation in a different manner.
+        raise NotImplementedError('Fallbacks are not supported with isnull.')
+    return _rewrite_with_fallbacks(model, lookup_fields, lookup_type, value,
+                                   resolution_order(get_language()))
+
+
 def get_fields_to_translatable_models(model):
     results = []
     for field_name in model._meta.get_all_field_names():
@@ -67,13 +117,16 @@ def get_fields_to_translatable_models(model):
 
 
 class MultilingualQuerySet(models.query.QuerySet):
-    _rewrite = True
 
     def __init__(self, *args, **kwargs):
         super(MultilingualQuerySet, self).__init__(*args, **kwargs)
         self._post_init()
 
     def _post_init(self):
+        # MultilingualManager.get_query_set overrides __class__ attribute,
+        # so __init__ isn't guaranteed to be executed.
+        self._rewrite = True
+        self._fallbacks = False
         if self.model and (not self.query.order_by):
             if self.model._meta.ordering:
                 # If we have default ordering specified on the model, set it now so that
@@ -86,11 +139,26 @@ class MultilingualQuerySet(models.query.QuerySet):
     # This method was not present in django-linguo
     def _clone(self, *args, **kwargs):
         kwargs.setdefault('_rewrite', self._rewrite)
+        kwargs.setdefault('_fallbacks', self._fallbacks)
         return super(MultilingualQuerySet, self)._clone(*args, **kwargs)
 
     # This method was not present in django-linguo
     def rewrite(self, mode=True):
+        """
+        Allows to disable any rewriting, thus making the query set
+        behave almost like a standard Django ``QuerySet``.
+        """
         return self._clone(_rewrite=mode)
+
+    # This method was not present in django-linguo
+    def fallbacks(self, enable=True):
+        """
+        Enable rewriting of some queries to account for fallback languages.
+
+        On default no fallbacks are considered in lookups / filtering
+        as applying them to all queries could cause some significant overhead.
+        """
+        return self._clone(_fallbacks=enable)
 
     def _rewrite_applied_operations(self):
         """
@@ -120,7 +188,10 @@ class MultilingualQuerySet(models.query.QuerySet):
     def _rewrite_q(self, q):
         "Rewrite field names inside Q call."
         if isinstance(q, tuple) and len(q) == 2:
-            return rewrite_lookup_key(self.model, q[0]), q[1]
+            if self._fallbacks and settings.ENABLE_FALLBACKS:
+                return rewrite_with_fallbacks(self.model, q[0], q[1])
+            else:
+                return rewrite_lookup_key(self.model, q[0]), q[1]
         if isinstance(q, Node):
             q.children = map(self._rewrite_q, q.children)
         return q
@@ -136,14 +207,12 @@ class MultilingualQuerySet(models.query.QuerySet):
         return q
 
     def _filter_or_exclude(self, negate, *args, **kwargs):
-        if not self._rewrite:
-            return super(MultilingualQuerySet, self)._filter_or_exclude(negate, *args, **kwargs)
-        args = map(self._rewrite_q, args)
-        for key, val in kwargs.items():
-            new_key = rewrite_lookup_key(self.model, key)
-            del kwargs[key]
-            kwargs[new_key] = self._rewrite_f(val)
-        return super(MultilingualQuerySet, self)._filter_or_exclude(negate, *args, **kwargs)
+        if self._rewrite:
+            return super(MultilingualQuerySet, self)._filter_or_exclude(
+                negate, self._rewrite_q(Q(*args, **kwargs)))
+        else:
+            return super(MultilingualQuerySet, self)._filter_or_exclude(
+                negate, *args, **kwargs)
 
     def order_by(self, *field_names):
         if not self._rewrite:
@@ -184,6 +253,9 @@ class MultilingualManager(models.Manager):
 
     def rewrite(self, *args, **kwargs):
         return self.get_query_set().rewrite(*args, **kwargs)
+
+    def fallbacks(self, *args, **kwargs):
+        return self.get_query_set().fallbacks(*args, **kwargs)
 
     def get_query_set(self):
         qs = super(MultilingualManager, self).get_query_set()

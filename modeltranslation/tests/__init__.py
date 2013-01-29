@@ -1584,3 +1584,49 @@ class TestManager(ModeltranslationTestBase):
         # Restore previous state
         reload(mt_settings)
         self.assertEqual(False, mt_settings.AUTO_POPULATE)
+
+    def test_fallbacks(self):
+        fallback_langs = {'default': ('en',), 'de': ('de',)}
+        with reload_override_settings(
+                MODELTRANSLATION_FALLBACK_LANGUAGES=fallback_langs):
+            trans_real.activate('en')
+            M = models.TestModel
+            m1 = M.objects.create(title='title1', text='text')
+            m2 = M.objects.create(title='title2', text='text', url='url')
+            with override('de'):
+                with self.assertRaises(M.DoesNotExist):
+                    M.objects.fallbacks(False).get(title='title1')
+                self.assertEqual(
+                    M.objects.fallbacks(True).get(title='title1'), m1)
+
+                self.assertEqual(
+                    tuple(M.objects.fallbacks(False).filter(
+                        text='text')), ())
+                self.assertEqual(
+                    tuple(M.objects.fallbacks(True).filter(
+                        text='text')), (m1, m2))
+
+                self.assertEqual(
+                    tuple(M.objects.fallbacks(False).filter(
+                        title__startswith='t')), ())
+                self.assertEqual(
+                    tuple(M.objects.fallbacks(True).filter(
+                        title__startswith='t')), (m1, m2))
+
+                # TODO: Non-fallback rewriting should probably also exclude
+                # null translation fields (just `where not title = "title1"`
+                # doesn't include null fields)?
+                # self.assertEqual(
+                #    tuple(M.objects.fallbacks(False).exclude(
+                #        title='title1')), (m1, m2))
+                self.assertEqual(
+                    tuple(M.objects.fallbacks(True).exclude(
+                        title='title1')), (m2,))
+
+                # self.assertEqual(
+                #    tuple(M.objects.fallbacks(False).filter(
+                #        ~Q(title__endswith='2') | Q(text__contains='x'))), ())
+                self.assertEqual(
+                    tuple(M.objects.fallbacks(True).filter(
+                        ~Q(title__endswith='2') | Q(text__contains='x'))),
+                        (m1, m2))
