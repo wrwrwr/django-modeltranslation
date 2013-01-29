@@ -93,6 +93,8 @@ def resolution_order(lang, override=None):
     First is always the parameter language, later are fallback languages.
     Override parameter has priority over FALLBACK_LANGUAGES.
     """
+    if not settings.ENABLE_FALLBACKS:
+        return (lang,)
     if override is None:
         override = {}
     fallback_for_lang = override.get(lang, settings.FALLBACK_LANGUAGES.get(lang, ()))
