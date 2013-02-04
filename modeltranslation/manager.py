@@ -106,6 +106,13 @@ def rewrite_with_fallbacks(model, lookup, value):
                                    resolution_order(get_language()))
 
 
+def rewrite_order_lookup_key(model, lookup_key):
+    if lookup_key.startswith('-'):
+        return '-' + rewrite_lookup_key(model, lookup_key[1:])
+    else:
+        return rewrite_lookup_key(model, lookup_key)
+
+
 def get_fields_to_translatable_models(model):
     results = []
     for field_name in model._meta.get_all_field_names():
@@ -133,7 +140,7 @@ class MultilingualQuerySet(models.query.QuerySet):
                 # it can be rewritten. Otherwise sql.compiler will grab it directly from _meta
                 ordering = []
                 for key in self.model._meta.ordering:
-                    ordering.append(rewrite_lookup_key(self.model, key))
+                    ordering.append(rewrite_order_lookup_key(self.model, key))
                 self.query.add_ordering(*ordering)
 
     # This method was not present in django-linguo
@@ -181,7 +188,7 @@ class MultilingualQuerySet(models.query.QuerySet):
             map(self._rewrite_where, q.children)
 
     def _rewrite_order(self):
-        self.query.order_by = [rewrite_lookup_key(self.model, field_name)
+        self.query.order_by = [rewrite_order_lookup_key(self.model, field_name)
                                for field_name in self.query.order_by]
 
     # This method was not present in django-linguo
@@ -215,11 +222,15 @@ class MultilingualQuerySet(models.query.QuerySet):
                 negate, *args, **kwargs)
 
     def order_by(self, *field_names):
+        """
+        Change translatable field names in an ``order_by`` argument
+        to translation fields for the current language.
+        """
         if not self._rewrite:
             return super(MultilingualQuerySet, self).order_by(*field_names)
         new_args = []
         for key in field_names:
-            new_args.append(rewrite_lookup_key(self.model, key))
+            new_args.append(rewrite_order_lookup_key(self.model, key))
         return super(MultilingualQuerySet, self).order_by(*new_args)
 
     def update(self, **kwargs):

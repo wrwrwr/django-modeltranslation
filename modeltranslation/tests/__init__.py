@@ -33,6 +33,7 @@ from modeltranslation.tests.translation import (FallbackModel2TranslationOptions
                                                 FieldInheritanceCTranslationOptions,
                                                 FieldInheritanceETranslationOptions)
 from modeltranslation.tests.test_settings import TEST_SETTINGS
+from modeltranslation.utils import build_css_class
 
 try:
     from django.test.utils import override_settings
@@ -181,6 +182,15 @@ class ModeltranslationTest(ModeltranslationTestBase):
     def test_verbose_name(self):
         verbose_name = models.TestModel._meta.get_field('title_de').verbose_name
         self.assertEquals(unicode(verbose_name), u'title [de]')
+
+    def test_descriptor_introspection(self):
+        # See Django #8248
+        try:
+            models.TestModel.title
+            models.TestModel.title.__doc__
+            self.assertTrue(True)
+        except:
+            self.fail('Descriptor accessed on class should return itself.')
 
     def test_set_translation(self):
         """This test briefly shows main modeltranslation features."""
@@ -1406,6 +1416,18 @@ class TranslationAdminTest(ModeltranslationTestBase):
         # Remove translation for DataModel
         translator.translator.unregister(models.DataModel)
 
+    def test_build_css_class(self):
+        fields = {
+            'foo_en': 'foo-en', 'foo_es_ar': 'foo-es_ar',
+            'foo_bar_de': 'foo_bar-de',
+            '_foo_en': '_foo-en', '_foo_es_ar': '_foo-es_ar',
+            '_foo_bar_de': '_foo_bar-de',
+            'foo__en': 'foo_-en', 'foo__es_ar': 'foo_-es_ar',
+            'foo_bar__de': 'foo_bar_-de',
+        }
+        for field, css in fields.items():
+            self.assertEqual(build_css_class(field), css)
+
 
 class TestManager(ModeltranslationTestBase):
     def setUp(self):
@@ -1485,6 +1507,38 @@ class TestManager(ModeltranslationTestBase):
             n = models.ManagerTestModel.objects.all()[0]
             self.assertEqual(n.visits_en, 11)
             self.assertEqual(n.visits_de, 22)
+
+    def test_order_by(self):
+        """Check that field names are rewritten in order_by keys."""
+        manager = models.ManagerTestModel.objects
+        manager.create(title='a')
+        m = manager.create(title='b')
+        manager.create(title='c')
+        with override('de'):
+            # Make the order of the 'title' column different.
+            m.title = 'd'
+            m.save()
+        titles_asc = tuple(m.title for m in manager.order_by('title'))
+        titles_desc = tuple(m.title for m in manager.order_by('-title'))
+        self.assertEqual(titles_asc, ('a', 'b', 'c'))
+        self.assertEqual(titles_desc, ('c', 'b', 'a'))
+
+    def test_order_by_meta(self):
+        """Check that meta ordering is rewritten."""
+        manager = models.ManagerTestModel.objects
+        manager.create(title='more_de', visits_en=1, visits_de=2)
+        manager.create(title='more_en', visits_en=2, visits_de=1)
+        manager.create(title='most', visits_en=3, visits_de=3)
+        manager.create(title='least', visits_en=0, visits_de=0)
+
+        # Ordering descending with visits_en
+        titles_for_en = tuple(m.title_en for m in manager.all())
+        with override('de'):
+            # Ordering descending with visits_de
+            titles_for_de = tuple(m.title_en for m in manager.all())
+
+        self.assertEqual(titles_for_en, ('most', 'more_en', 'more_de', 'least'))
+        self.assertEqual(titles_for_de, ('most', 'more_de', 'more_en', 'least'))
 
     def test_custom_manager(self):
         """Test if user-defined manager is still working"""
