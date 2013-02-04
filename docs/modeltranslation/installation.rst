@@ -30,7 +30,7 @@ Using Pip
 Using the Source
 ----------------
 
-Get a source tarball from `github`_ or `pypi`_, unpack, then install with:
+Get a source tarball from `pypi`_, unpack, then install with:
 
 .. code-block:: console
 
@@ -40,7 +40,6 @@ Get a source tarball from `github`_ or `pypi`_, unpack, then install with:
           unpack the tarball and copy/move the modeltranslation directory
           to a path listed in your ``PYTHONPATH`` environment variable.
 
-.. _github: https://github.com/deschler/django-modeltranslation/downloads
 .. _pypi: http://pypi.python.org/pypi/django-modeltranslation/
 
 
@@ -110,6 +109,12 @@ and ``en`` in your project, set the ``LANGUAGES`` variable like this (where
     The ``gettext`` lambda function is not a feature of modeltranslation, but
     rather required for Django to be able to (statically) translate the verbose
     names of the languages using the standard ``i18n`` solution.
+
+.. warning::
+    Modeltranslation does not enforce the ``LANGUAGES`` setting to be defined
+    in your project. When it isn't present, it defaults to Django's
+    `global LANGUAGES setting <https://github.com/django/django/blob/master/django/conf/global_settings.py>`_
+    instead, and that are quite a number of languages!
 
 
 Advanced Settings
