@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 The idea of MultilingualManager is taken from
 django-linguo by Zach Mathew
@@ -9,8 +10,8 @@ from django.db.models.fields.related import RelatedField
 from django.db.models.sql.where import Constraint
 from django.utils.tree import Node
 
-from modeltranslation.utils import build_localized_fieldname, get_language
 from modeltranslation import settings
+from modeltranslation.utils import build_localized_fieldname, get_language
 
 
 _registry = {}
@@ -36,7 +37,6 @@ def rewrite_lookup_key(model, lookup_key):
         # For example, we want to rewrite "name__startswith" to "name_fr__startswith"
         if pieces[0] in translatable_fields:
             lookup_key = build_localized_fieldname(pieces[0], get_language())
-
             remaining_lookup = '__'.join(pieces[1:])
             if remaining_lookup:
                 lookup_key = '%s__%s' % (lookup_key, remaining_lookup)
@@ -56,9 +56,17 @@ def rewrite_lookup_key(model, lookup_key):
     return lookup_key
 
 
+def rewrite_order_lookup_key(model, lookup_key):
+    if lookup_key.startswith('-'):
+        return '-' + rewrite_lookup_key(model, lookup_key[1:])
+    else:
+        return rewrite_lookup_key(model, lookup_key)
+
+
 def get_fields_to_translatable_models(model):
+    from modeltranslation.translator import translator
     results = []
-    for field_name in model._meta.get_all_field_names():
+    for field_name in translator.get_options_for_model(model).localized_fieldnames.keys():
         field_object, modelclass, direct, m2m = model._meta.get_field_by_name(field_name)
         if direct and isinstance(field_object, RelatedField):
             if get_translatable_fields_for_model(field_object.related.parent_model) is not None:
@@ -80,7 +88,7 @@ class MultilingualQuerySet(models.query.QuerySet):
                 # it can be rewritten. Otherwise sql.compiler will grab it directly from _meta
                 ordering = []
                 for key in self.model._meta.ordering:
-                    ordering.append(rewrite_lookup_key(self.model, key))
+                    ordering.append(rewrite_order_lookup_key(self.model, key))
                 self.query.add_ordering(*ordering)
 
     # This method was not present in django-linguo
@@ -102,7 +110,9 @@ class MultilingualQuerySet(models.query.QuerySet):
         self._rewrite_order()
 
     def _rewrite_where(self, q):
-        "Rewrite field names inside WHERE tree."
+        """
+        Rewrite field names inside WHERE tree.
+        """
         if isinstance(q, tuple) and isinstance(q[0], Constraint):
             c = q[0]
             new_name = rewrite_lookup_key(self.model, c.field.name)
@@ -113,12 +123,12 @@ class MultilingualQuerySet(models.query.QuerySet):
             map(self._rewrite_where, q.children)
 
     def _rewrite_order(self):
-        self.query.order_by = [rewrite_lookup_key(self.model, field_name)
+        self.query.order_by = [rewrite_order_lookup_key(self.model, field_name)
                                for field_name in self.query.order_by]
 
     # This method was not present in django-linguo
     def _rewrite_q(self, q):
-        "Rewrite field names inside Q call."
+        """Rewrite field names inside Q call."""
         if isinstance(q, tuple) and len(q) == 2:
             return rewrite_lookup_key(self.model, q[0]), q[1]
         if isinstance(q, Node):
@@ -127,7 +137,9 @@ class MultilingualQuerySet(models.query.QuerySet):
 
     # This method was not present in django-linguo
     def _rewrite_f(self, q):
-        "Rewrite field names inside F call."
+        """
+        Rewrite field names inside F call.
+        """
         if isinstance(q, models.F):
             q.name = rewrite_lookup_key(self.model, q.name)
             return q
@@ -146,11 +158,15 @@ class MultilingualQuerySet(models.query.QuerySet):
         return super(MultilingualQuerySet, self)._filter_or_exclude(negate, *args, **kwargs)
 
     def order_by(self, *field_names):
+        """
+        Change translatable field names in an ``order_by`` argument
+        to translation fields for the current language.
+        """
         if not self._rewrite:
             return super(MultilingualQuerySet, self).order_by(*field_names)
         new_args = []
         for key in field_names:
-            new_args.append(rewrite_lookup_key(self.model, key))
+            new_args.append(rewrite_order_lookup_key(self.model, key))
         return super(MultilingualQuerySet, self).order_by(*new_args)
 
     def update(self, **kwargs):

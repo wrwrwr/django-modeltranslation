@@ -22,17 +22,18 @@ from django.core.management import call_command
 from django.db.models import Q, F
 from django.db.models.loading import AppCache
 from django.test import TestCase
-from django.utils.datastructures import SortedDict
 from django.utils.translation import get_language, trans_real
 
 from modeltranslation import settings as mt_settings
 from modeltranslation import translator
 from modeltranslation import admin
+from modeltranslation.models import autodiscover
 from modeltranslation.tests import models
 from modeltranslation.tests.translation import (FallbackModel2TranslationOptions,
                                                 FieldInheritanceCTranslationOptions,
                                                 FieldInheritanceETranslationOptions)
 from modeltranslation.tests.test_settings import TEST_SETTINGS
+from modeltranslation.utils import build_css_class
 
 try:
     from django.test.utils import override_settings
@@ -110,28 +111,6 @@ class ModeltranslationTestBase(TestCase):
                 call_command('syncdb', verbosity=0, migrate=False, interactive=False,
                              database=connections[DEFAULT_DB_ALIAS].alias, load_initial_data=False)
 
-    @classmethod
-    def clear_cache(cls):
-        """
-        It is necessary to clear cache - otherwise model reloading won't
-        recreate models, but just use old ones.
-        """
-        cls.cache.app_store = SortedDict()
-        cls.cache.app_models = SortedDict()
-        cls.cache.app_errors = {}
-        cls.cache.handled = {}
-        cls.cache.loaded = False
-
-    @classmethod
-    def reset_cache(cls):
-        """
-        Rebuild whole cache, import all models again
-        """
-        cls.clear_cache()
-        cls.cache._populate()
-        for m in cls.cache.get_apps():
-            reload(m)
-
     def setUp(self):
         trans_real.activate('de')
 
@@ -139,6 +118,102 @@ class ModeltranslationTestBase(TestCase):
         trans_real.deactivate()
 
 ModeltranslationTestBase = override_settings(**TEST_SETTINGS)(ModeltranslationTestBase)
+
+
+class TestAutodiscover(ModeltranslationTestBase):
+    # The way the ``override_settings`` works on ``TestCase`` is wicked;
+    # it patches ``_pre_setup`` and ``_post_teardown`` methods.
+    # Because of this, if class B extends class A and both are ``override_settings``'ed,
+    # class B settings would be overwritten by class A settings (if some keys clash).
+    # To solve this, override some settings after parents ``_pre_setup`` is called.
+    def _pre_setup(self):
+        super(TestAutodiscover, self)._pre_setup()
+        # Add test_app to INSTALLED_APPS
+        from django.conf import settings
+        new_installed_apps = settings.INSTALLED_APPS + ('modeltranslation.tests.test_app',)
+        self.__override = override_settings(INSTALLED_APPS=new_installed_apps)
+        self.__override.enable()
+
+    def _post_teardown(self):
+        self.__override.disable()
+        super(TestAutodiscover, self)._post_teardown()
+
+    @classmethod
+    def setUpClass(cls):
+        """Save registry (and restore it after tests)."""
+        super(TestAutodiscover, cls).setUpClass()
+        from copy import copy
+        from modeltranslation.translator import translator
+        cls.registry_cpy = copy(translator._registry)
+
+    @classmethod
+    def tearDownClass(cls):
+        from modeltranslation.translator import translator
+        translator._registry = cls.registry_cpy
+        super(TestAutodiscover, cls).tearDownClass()
+
+    def tearDown(self):
+        import sys
+        # Rollback model classes
+        del self.cache.app_models['test_app']
+        from test_app import models
+        reload(models)
+        # Delete translation modules from import cache
+        sys.modules.pop('modeltranslation.tests.test_app.translation', None)
+        sys.modules.pop('modeltranslation.tests.project_translation', None)
+
+    def check_news(self):
+        from test_app.models import News
+        fields = dir(News())
+        self.assertIn('title', fields)
+        self.assertIn('title_en', fields)
+        self.assertIn('title_de', fields)
+        self.assertIn('visits', fields)
+        self.assertNotIn('visits_en', fields)
+        self.assertNotIn('visits_de', fields)
+
+    def check_other(self, present=True):
+        from test_app.models import Other
+        fields = dir(Other())
+        self.assertIn('name', fields)
+        if present:
+            self.assertIn('name_en', fields)
+            self.assertIn('name_de', fields)
+        else:
+            self.assertNotIn('name_en', fields)
+            self.assertNotIn('name_de', fields)
+
+    def test_simple(self):
+        """Check if translation is imported for installed apps."""
+        autodiscover()
+        self.check_news()
+        self.check_other(present=False)
+
+    @reload_override_settings(
+        MODELTRANSLATION_TRANSLATION_FILES=('modeltranslation.tests.project_translation',)
+    )
+    def test_global(self):
+        """Check if translation is imported for global translation file."""
+        autodiscover()
+        self.check_news()
+        self.check_other()
+
+    @reload_override_settings(
+        MODELTRANSLATION_TRANSLATION_FILES=('modeltranslation.tests.test_app.translation',)
+    )
+    def test_duplication(self):
+        """Check if there is no problem with duplicated filenames."""
+        autodiscover()
+        self.check_news()
+
+    @reload_override_settings(
+        MODELTRANSLATION_TRANSLATION_REGISTRY='modeltranslation.tests.project_translation'
+    )
+    def test_backward_compatibility(self):
+        """Check if old modeltranslation configuration (with REGISTRY) is handled properly."""
+        autodiscover()
+        self.check_news()
+        self.check_other()
 
 
 class ModeltranslationTest(ModeltranslationTestBase):
@@ -181,6 +256,15 @@ class ModeltranslationTest(ModeltranslationTestBase):
     def test_verbose_name(self):
         verbose_name = models.TestModel._meta.get_field('title_de').verbose_name
         self.assertEquals(unicode(verbose_name), u'title [de]')
+
+    def test_descriptor_introspection(self):
+        # See Django #8248
+        try:
+            models.TestModel.title
+            models.TestModel.title.__doc__
+            self.assertTrue(True)
+        except:
+            self.fail('Descriptor accessed on class should return itself.')
 
     def test_set_translation(self):
         """This test briefly shows main modeltranslation features."""
@@ -1406,6 +1490,18 @@ class TranslationAdminTest(ModeltranslationTestBase):
         # Remove translation for DataModel
         translator.translator.unregister(models.DataModel)
 
+    def test_build_css_class(self):
+        fields = {
+            'foo_en': 'foo-en', 'foo_es_ar': 'foo-es_ar',
+            'foo_bar_de': 'foo_bar-de',
+            '_foo_en': '_foo-en', '_foo_es_ar': '_foo-es_ar',
+            '_foo_bar_de': '_foo_bar-de',
+            'foo__en': 'foo_-en', 'foo__es_ar': 'foo_-es_ar',
+            'foo_bar__de': 'foo_bar_-de',
+        }
+        for field, css in fields.items():
+            self.assertEqual(build_css_class(field), css)
+
 
 class TestManager(ModeltranslationTestBase):
     def setUp(self):
@@ -1485,6 +1581,38 @@ class TestManager(ModeltranslationTestBase):
             n = models.ManagerTestModel.objects.all()[0]
             self.assertEqual(n.visits_en, 11)
             self.assertEqual(n.visits_de, 22)
+
+    def test_order_by(self):
+        """Check that field names are rewritten in order_by keys."""
+        manager = models.ManagerTestModel.objects
+        manager.create(title='a')
+        m = manager.create(title='b')
+        manager.create(title='c')
+        with override('de'):
+            # Make the order of the 'title' column different.
+            m.title = 'd'
+            m.save()
+        titles_asc = tuple(m.title for m in manager.order_by('title'))
+        titles_desc = tuple(m.title for m in manager.order_by('-title'))
+        self.assertEqual(titles_asc, ('a', 'b', 'c'))
+        self.assertEqual(titles_desc, ('c', 'b', 'a'))
+
+    def test_order_by_meta(self):
+        """Check that meta ordering is rewritten."""
+        manager = models.ManagerTestModel.objects
+        manager.create(title='more_de', visits_en=1, visits_de=2)
+        manager.create(title='more_en', visits_en=2, visits_de=1)
+        manager.create(title='most', visits_en=3, visits_de=3)
+        manager.create(title='least', visits_en=0, visits_de=0)
+
+        # Ordering descending with visits_en
+        titles_for_en = tuple(m.title_en for m in manager.all())
+        with override('de'):
+            # Ordering descending with visits_de
+            titles_for_de = tuple(m.title_en for m in manager.all())
+
+        self.assertEqual(titles_for_en, ('most', 'more_en', 'more_de', 'least'))
+        self.assertEqual(titles_for_de, ('most', 'more_de', 'more_en', 'least'))
 
     def test_custom_manager(self):
         """Test if user-defined manager is still working"""
