@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 """
-TODO: Merge autoregister tests from django-modeltranslation-wrapper.
-
 NOTE: Perhaps ModeltranslationTestBase in tearDownClass should reload some modules,
       so that tests for other apps are in the same environment.
 
@@ -33,7 +31,8 @@ from modeltranslation.tests.translation import (FallbackModel2TranslationOptions
                                                 FieldInheritanceCTranslationOptions,
                                                 FieldInheritanceETranslationOptions)
 from modeltranslation.tests.test_settings import TEST_SETTINGS
-from modeltranslation.utils import build_css_class, build_localized_fieldname
+from modeltranslation.utils import (build_css_class, build_localized_fieldname,
+                                    auto_populate)
 
 try:
     from django.test.utils import override_settings
@@ -47,6 +46,9 @@ except ImportError:
 # None of the following tests really depend on the content of the request,
 # so we'll just pass in None.
 request = None
+
+# How much models are registered for tests.
+TEST_MODELS = 22
 
 
 class reload_override_settings(override_settings):
@@ -227,7 +229,7 @@ class ModeltranslationTest(ModeltranslationTestBase):
         self.failUnless(translator.translator)
 
         # Check that all models are registered for translation
-        self.assertEqual(len(translator.translator.get_registered_models()), 19)
+        self.assertEqual(len(translator.translator.get_registered_models()), TEST_MODELS)
 
         # Try to unregister a model that is not registered
         self.assertRaises(translator.NotRegistered,
@@ -885,6 +887,46 @@ class OtherFieldsTest(ModeltranslationTestBase):
         self.assertEqual(datetime.time(01, 02, 03), inst.time_de)
         self.assertEqual(datetime.time(23, 42, 0), inst.time_en)
 
+    def test_descriptors(self):
+        # Descriptor store ints in database and returns string of 'a' of that length
+        inst = models.DescriptorModel()
+        # Demonstrate desired behaviour
+        inst.normal = 2
+        self.assertEqual('aa', inst.normal)
+        inst.normal = 'abc'
+        self.assertEqual('aaa', inst.normal)
+
+        # Descriptor on translated field works too
+        self.assertEqual('de', get_language())
+        inst.trans = 5
+        self.assertEqual('aaaaa', inst.trans)
+
+        inst.save()
+        db_values = models.DescriptorModel.objects.values('normal', 'trans_en', 'trans_de')[0]
+        self.assertEqual(3, db_values['normal'])
+        self.assertEqual(5, db_values['trans_de'])
+        self.assertEqual(0, db_values['trans_en'])
+
+        # Retrieval from db
+        inst = models.DescriptorModel.objects.all()[0]
+        self.assertEqual('aaa', inst.normal)
+        self.assertEqual('aaaaa', inst.trans)
+        self.assertEqual('aaaaa', inst.trans_de)
+        self.assertEqual('', inst.trans_en)
+
+        # Other language
+        trans_real.activate('en')
+        self.assertEqual('', inst.trans)
+        inst.trans = 'q'
+        self.assertEqual('a', inst.trans)
+        inst.trans_de = 4
+        self.assertEqual('aaaa', inst.trans_de)
+        inst.save()
+        db_values = models.DescriptorModel.objects.values('normal', 'trans_en', 'trans_de')[0]
+        self.assertEqual(3, db_values['normal'])
+        self.assertEqual(4, db_values['trans_de'])
+        self.assertEqual(1, db_values['trans_en'])
+
 
 class ModeltranslationTestRule1(ModeltranslationTestBase):
     """
@@ -1405,7 +1447,7 @@ class TranslationAdminTest(ModeltranslationTestBase):
         self.assertEqual(
             ma.get_form(request).base_fields.keys(), ['title_de', 'title_en'])
 
-        # Using `readonly_fields`.
+        # Using `fields` and `readonly_fields`.
         class TestModelAdmin(admin.TranslationAdmin):
             fields = ['title', 'url']
             readonly_fields = ['url']
@@ -1414,8 +1456,18 @@ class TranslationAdminTest(ModeltranslationTestBase):
         self.assertEqual(
             ma.get_form(request).base_fields.keys(), ['title_de', 'title_en'])
 
+        # Using `readonly_fields`.
+        # Note: readonly fields are not included in the form.
+        class TestModelAdmin(admin.TranslationAdmin):
+            readonly_fields = ['title']
+
+        ma = TestModelAdmin(models.TestModel, self.site)
+        self.assertEqual(
+            ma.get_form(request).base_fields.keys(),
+            ['text_de', 'text_en', 'url_de', 'url_en', 'email_de', 'email_en'])
+
         # Using grouped fields.
-        # Note: Current implementation flattens the nested fields
+        # Note: Current implementation flattens the nested fields.
         class TestModelAdmin(admin.TranslationAdmin):
             fields = (('title', 'url'), 'email',)
 
@@ -1538,16 +1590,22 @@ class TranslationAdminTest(ModeltranslationTestBase):
         translator.translator.unregister(models.DataModel)
 
     def test_build_css_class(self):
-        fields = {
-            'foo_en': 'foo-en', 'foo_es_ar': 'foo-es_ar',
-            'foo_bar_de': 'foo_bar-de',
-            '_foo_en': '_foo-en', '_foo_es_ar': '_foo-es_ar',
-            '_foo_bar_de': '_foo_bar-de',
-            'foo__en': 'foo_-en', 'foo__es_ar': 'foo_-es_ar',
-            'foo_bar__de': 'foo_bar_-de',
-        }
-        for field, css in fields.items():
-            self.assertEqual(build_css_class(field), css)
+        with reload_override_settings(LANGUAGES=(('de', 'German'), ('en', 'English'),
+                                                 ('es-ar', 'Argentinian Spanish'),)):
+            fields = {
+                'foo_en': 'foo-en',
+                'foo_es_ar': 'foo-es_ar',
+                'foo_en_us': 'foo-en_us',
+                'foo_bar_de': 'foo_bar-de',
+                '_foo_en': '_foo-en',
+                '_foo_es_ar': '_foo-es_ar',
+                '_foo_bar_de': '_foo_bar-de',
+                'foo__en': 'foo_-en',
+                'foo__es_ar': 'foo_-es_ar',
+                'foo_bar__de': 'foo_bar_-de',
+            }
+            for field, css in fields.items():
+                self.assertEqual(build_css_class(field), css)
 
     def test_multitable_inheritance(self):
         class MultitableModelAAdmin(admin.TranslationAdmin):
@@ -1564,11 +1622,94 @@ class TranslationAdminTest(ModeltranslationTestBase):
         self.assertEqual(mab.get_form(request).base_fields.keys(),
                          ['titlea_de', 'titlea_en', 'titleb_de', 'titleb_en'])
 
+    def test_group_fieldsets(self):
+        # Declared fieldsets take precedence over group_fieldsets
+        class GroupFieldsetsModelAdmin(admin.TranslationAdmin):
+            fieldsets = [(None, {'fields': ['title']})]
+            group_fieldsets = True
+        ma = GroupFieldsetsModelAdmin(models.GroupFieldsetsModel, self.site)
+        fields = ['title_de', 'title_en']
+        self.assertEqual(ma.get_form(request).base_fields.keys(), fields)
+        self.assertEqual(ma.get_form(request, self.test_obj).base_fields.keys(), fields)
+
+        # Now set group_fieldsets only
+        class GroupFieldsetsModelAdmin(admin.TranslationAdmin):
+            group_fieldsets = True
+        ma = GroupFieldsetsModelAdmin(models.GroupFieldsetsModel, self.site)
+        # Only text and title are registered for translation. We expect to get
+        # three fieldsets. The first which gathers all untranslated field
+        # (email only) and one for each translation field (text and title).
+        fieldsets = [
+            ('', {'fields': ['email']}),
+            ('text', {'classes': ('mt-fieldset',), 'fields': ['text_de', 'text_en']}),
+            ('title', {'classes': ('mt-fieldset',), 'fields': ['title_de', 'title_en']})
+        ]
+        self.assertEqual(ma.get_fieldsets(request), fieldsets)
+        self.assertEqual(ma.get_fieldsets(request, self.test_obj), fieldsets)
+
+        # Verify that other options are still taken into account
+
+        # Exclude an untranslated field
+        class GroupFieldsetsModelAdmin(admin.TranslationAdmin):
+            group_fieldsets = True
+            exclude = ('email',)
+        ma = GroupFieldsetsModelAdmin(models.GroupFieldsetsModel, self.site)
+        fieldsets = [
+            ('text', {'classes': ('mt-fieldset',), 'fields': ['text_de', 'text_en']}),
+            ('title', {'classes': ('mt-fieldset',), 'fields': ['title_de', 'title_en']})
+        ]
+        self.assertEqual(ma.get_fieldsets(request), fieldsets)
+        self.assertEqual(ma.get_fieldsets(request, self.test_obj), fieldsets)
+
+        # Exclude a translation field
+        class GroupFieldsetsModelAdmin(admin.TranslationAdmin):
+            group_fieldsets = True
+            exclude = ('text',)
+        ma = GroupFieldsetsModelAdmin(models.GroupFieldsetsModel, self.site)
+        fieldsets = [
+            ('', {'fields': ['email']}),
+            ('title', {'classes': ('mt-fieldset',), 'fields': ['title_de', 'title_en']})
+        ]
+        self.assertEqual(ma.get_fieldsets(request), fieldsets)
+        self.assertEqual(ma.get_fieldsets(request, self.test_obj), fieldsets)
+
+    def test_prepopulated_fields(self):
+        trans_real.activate('de')
+        self.failUnlessEqual(get_language(), 'de')
+
+        class NameModelAdmin(admin.TranslationAdmin):
+            prepopulated_fields = {'slug': ('firstname',)}
+        ma = NameModelAdmin(models.NameModel, self.site)
+        self.assertEqual(ma.prepopulated_fields, {'slug': ('firstname_de',)})
+
+        class NameModelAdmin(admin.TranslationAdmin):
+            prepopulated_fields = {'slug': ('firstname', 'lastname',)}
+        ma = NameModelAdmin(models.NameModel, self.site)
+        self.assertEqual(ma.prepopulated_fields, {'slug': ('firstname_de', 'lastname_de',)})
+
+        trans_real.activate('en')
+        self.failUnlessEqual(get_language(), 'en')
+
+        class NameModelAdmin(admin.TranslationAdmin):
+            prepopulated_fields = {'slug': ('firstname',)}
+        ma = NameModelAdmin(models.NameModel, self.site)
+        self.assertEqual(ma.prepopulated_fields, {'slug': ('firstname_en',)})
+
+        class NameModelAdmin(admin.TranslationAdmin):
+            prepopulated_fields = {'slug': ('firstname', 'lastname',)}
+        ma = NameModelAdmin(models.NameModel, self.site)
+        self.assertEqual(ma.prepopulated_fields, {'slug': ('firstname_en', 'lastname_en',)})
+
 
 class TestManager(ModeltranslationTestBase):
     def setUp(self):
         # In this test case the default language is en, not de.
         trans_real.activate('en')
+
+    def tearDown(self):
+        # Settings may be loaded by translator, resulting in a different fallback.
+        trans_real.activate('de')
+        reload(mt_settings)
 
     def test_filter_update(self):
         """Test if filtering and updating is language-aware."""
@@ -1729,20 +1870,20 @@ class TestManager(ModeltranslationTestBase):
 
     def test_creation_population(self):
         """Test if language fields are populated with default value on creation."""
-        n = models.ManagerTestModel.objects.create(title='foo', _populate=True)
+        n = models.ManagerTestModel.objects.populate(True).create(title='foo')
         self.assertEqual('foo', n.title_en)
         self.assertEqual('foo', n.title_de)
         self.assertEqual('foo', n.title)
 
         # You can specify some language...
-        n = models.ManagerTestModel.objects.create(title='foo', title_de='bar', _populate=True)
+        n = models.ManagerTestModel.objects.populate(True).create(title='foo', title_de='bar')
         self.assertEqual('foo', n.title_en)
         self.assertEqual('bar', n.title_de)
         self.assertEqual('foo', n.title)
 
         # ... but remember that still original attribute points to current language
         self.assertEqual('en', get_language())
-        n = models.ManagerTestModel.objects.create(title='foo', title_en='bar', _populate=True)
+        n = models.ManagerTestModel.objects.populate(True).create(title='foo', title_en='bar')
         self.assertEqual('bar', n.title_en)
         self.assertEqual('foo', n.title_de)
         self.assertEqual('bar', n.title)  # points to en
@@ -1750,27 +1891,78 @@ class TestManager(ModeltranslationTestBase):
             self.assertEqual('foo', n.title)  # points to de
         self.assertEqual('en', get_language())
 
-        # This feature (for backward-compatibility) require _populate keyword...
+        # This feature (for backward-compatibility) require populate method...
         n = models.ManagerTestModel.objects.create(title='foo')
         self.assertEqual('foo', n.title_en)
         self.assertEqual(None, n.title_de)
         self.assertEqual('foo', n.title)
 
         # ... or MODELTRANSLATION_AUTO_POPULATE setting
-        with override_settings(MODELTRANSLATION_AUTO_POPULATE=True):
-            reload(mt_settings)
+        with reload_override_settings(MODELTRANSLATION_AUTO_POPULATE=True):
             self.assertEqual(True, mt_settings.AUTO_POPULATE)
             n = models.ManagerTestModel.objects.create(title='foo')
             self.assertEqual('foo', n.title_en)
             self.assertEqual('foo', n.title_de)
             self.assertEqual('foo', n.title)
 
-            # _populate keyword has highest priority
-            n = models.ManagerTestModel.objects.create(title='foo', _populate=False)
+            # populate method has highest priority
+            n = models.ManagerTestModel.objects.populate(False).create(title='foo')
             self.assertEqual('foo', n.title_en)
             self.assertEqual(None, n.title_de)
             self.assertEqual('foo', n.title)
 
-        # Restore previous state
-        reload(mt_settings)
-        self.assertEqual(False, mt_settings.AUTO_POPULATE)
+        # Populate ``default`` fills just the default translation.
+        # TODO: Having more languages would make these tests more meaningful.
+        qs = models.ManagerTestModel.objects
+        m = qs.populate('default').create(title='foo', description='bar')
+        self.assertEqual('foo', m.title_de)
+        self.assertEqual('foo', m.title_en)
+        self.assertEqual('bar', m.description_de)
+        self.assertEqual('bar', m.description_en)
+        with override('de'):
+            m = qs.populate('default').create(title='foo', description='bar')
+            self.assertEqual('foo', m.title_de)
+            self.assertEqual(None, m.title_en)
+            self.assertEqual('bar', m.description_de)
+            self.assertEqual(None, m.description_en)
+
+        # Populate ``required`` fills just non-nullable default translations.
+        qs = models.ManagerTestModel.objects
+        m = qs.populate('required').create(title='foo', description='bar')
+        self.assertEqual('foo', m.title_de)
+        self.assertEqual('foo', m.title_en)
+        self.assertEqual(None, m.description_de)
+        self.assertEqual('bar', m.description_en)
+        with override('de'):
+            m = qs.populate('required').create(title='foo', description='bar')
+            self.assertEqual('foo', m.title_de)
+            self.assertEqual(None, m.title_en)
+            self.assertEqual('bar', m.description_de)
+            self.assertEqual(None, m.description_en)
+
+    def test_get_or_create_population(self):
+        """
+        Populate may be used with ``get_or_create``.
+        """
+        qs = models.ManagerTestModel.objects
+        m1, created1 = qs.populate(True).get_or_create(title='aaa')
+        m2, created2 = qs.populate(True).get_or_create(title='aaa')
+        self.assertTrue(created1)
+        self.assertFalse(created2)
+        self.assertEqual(m1, m2)
+        self.assertEqual('aaa', m1.title_en)
+        self.assertEqual('aaa', m1.title_de)
+
+    def test_fixture_population(self):
+        """
+        Test that a fixture with values only for the original fields
+        does not result in missing default translations for (original)
+        non-nullable fields.
+        """
+        with auto_populate('required'):
+            call_command('loaddata', 'fixture.json', verbosity=0, commit=False)
+            m = models.TestModel.objects.get()
+            self.assertEqual(m.title_en, 'foo')
+            self.assertEqual(m.title_de, 'foo')
+            self.assertEqual(m.text_en, 'bar')
+            self.assertEqual(m.text_de, None)
