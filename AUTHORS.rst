@@ -20,6 +20,8 @@ Contributors
 * Mihai Sucan
 * Benoît Bryon
 * Wojtek Ruszczewski
+* Chris Adams
+* Dominique Lederer
 * And many more ... (if you miss your name here, please let us know!)
 
 .. _django-linguo: https://github.com/zmathew/django-linguo
