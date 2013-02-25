@@ -51,6 +51,7 @@ for key, value in FALLBACK_LANGUAGES.iteritems():
         if lang not in AVAILABLE_LANGUAGES:
             raise ImproperlyConfigured(
                 'MODELTRANSLATION_FALLBACK_LANGUAGES: "%s" not in LANGUAGES setting.' % lang)
+ENABLE_FALLBACKS = getattr(settings, 'MODELTRANSLATION_ENABLE_FALLBACKS', True)
 
 SOUTH_IGNORE = getattr(settings, 'MODELTRANSLATION_SOUTH_IGNORE', False)
 if (SOUTH_IGNORE and "south" in settings.INSTALLED_APPS):
