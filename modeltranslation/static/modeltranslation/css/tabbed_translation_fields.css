@@ -78,11 +78,17 @@ backward compatibility:
     padding-left: 4px;
     font-family: "Lucida Grande", "DejaVu Sans", "Bitstream Vera Sans", Verdana,Arial, sans-serif;
 }
-.inline-group .tabular tr td input,
-.inline-group .tabular tr td textarea {
-    margin-top: 3.4em;
+.inline-group .tabular tr td {
+    vertical-align: bottom;
 }
-.inline-group .tabular tr td.ui-tabs input,
-.inline-group .tabular tr td.ui-tabs textarea {
-    margin-top: 0;
+.inline-group .tabular tr.has_original td.original,
+.inline-group .tabular tr td.delete {
+    vertical-align: top;
+}
+
+.inline-group .tabular .datetime > input {
+    margin-right: 5px;
+}
+.inline-group .tabular .datetime br {
+    display: none;
 }

@@ -9,7 +9,7 @@ Requirements
 +------------------+------------+-----------+
 | Modeltranslation | Python     | Django    |
 +==================+============+===========+
-| ==0.5            | 2.6 - 2.7  |       1.5 |
+| >=0.5            | 2.6 - 2.7  |       1.5 |
 |                  +------------+-----------+
 |                  | 2.5 - 2.7  | 1.3 - 1.4 |
 +------------------+------------+-----------+
@@ -208,9 +208,12 @@ Example::
     Modeltranslation up to version 0.3 used a single project wide registration
     file which was defined through
     ``MODELTRANSLATION_TRANSLATION_REGISTRY = '<PROJECT_MODULE>.translation'``.
-    For backwards compatibiliy the module defined through this setting is
+
+    In version 0.4 and 0.5, for backwards compatibiliy, the module defined through this setting was
     automatically added to ``MODELTRANSLATION_TRANSLATION_FILES``. A
-    ``DeprecationWarning`` is issued in this case.
+    ``DeprecationWarning`` was issued in this case.
+
+    In version 0.6 ``MODELTRANSLATION_TRANSLATION_REGISTRY`` is handled no more.
 
 
 ``MODELTRANSLATION_CUSTOM_FIELDS``
@@ -272,3 +275,13 @@ Default: ``settings.DEBUG``
 Used for modeltranslation related debug output. Currently setting it to
 ``False`` will just prevent Django's development server from printing the
 ``Registered xx models for translation`` message to stdout.
+
+
+``MODELTRANSLATION_ENABLE_FALLBACKS``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Default: ``True``
+
+.. versionadded:: 0.6
+
+Control if :ref:`fallback <fallback>` (both language and value) will occur.

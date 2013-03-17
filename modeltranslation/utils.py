@@ -125,3 +125,25 @@ def auto_populate(mode='all'):
         yield
     finally:
         settings.AUTO_POPULATE = current_population_mode
+
+
+@contextmanager
+def fallbacks(enable=True):
+    """
+    Temporarily switch all language fallbacks on or off.
+
+    Example:
+
+        with fallbacks(False):
+            lang_has_slug = bool(self.slug)
+
+    May be used to enable fallbacks just when they're needed saving on some
+    processing or check if there is a value for the current language (not
+    knowing the language)
+    """
+    current_enable_fallbacks = settings.ENABLE_FALLBACKS
+    settings.ENABLE_FALLBACKS = enable
+    try:
+        yield
+    finally:
+        settings.ENABLE_FALLBACKS = current_enable_fallbacks
