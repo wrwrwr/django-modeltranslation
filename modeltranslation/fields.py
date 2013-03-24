@@ -116,13 +116,7 @@ class TranslationField(object):
         self.translated_field = translated_field
         self.language = language
 
-        # Translation are always optional (for now - maybe add some parameters
-        # to the translation options for configuring this)
-
-        if not isinstance(self, fields.BooleanField):
-            # TODO: Do we really want to enforce null *at all*? Shouldn't this
-            # better honour the null setting of the translated field?
-            self.null = True
+        # Translation are not required in general
         self.blank = True
 
         # Adjust the name of this field to reflect the language
@@ -247,7 +241,7 @@ class TranslationFieldDescriptor(object):
         for lang in langs:
             loc_field_name = build_localized_fieldname(self.field.name, lang)
             val = getattr(instance, loc_field_name, None)
-            if val is not None and val != undefined:
+            if val != undefined:
                 return val
         if mt_settings.ENABLE_FALLBACKS and self.fallback_value is not NONE:
             return self.fallback_value

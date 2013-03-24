@@ -299,7 +299,7 @@ class ModeltranslationTest(ModeltranslationTestBase):
         # populated for the current language field: "title_de".
         inst2 = models.TestModel(title=title_de)
         self.failUnlessEqual(inst2.title, title_de)
-        self.failUnlessEqual(inst2.title_en, None)
+        self.failUnlessEqual(inst2.title_en, '')
         self.failUnlessEqual(inst2.title_de, title_de)
 
         # So creating object is language-aware
@@ -307,7 +307,7 @@ class ModeltranslationTest(ModeltranslationTestBase):
             inst2 = models.TestModel(title=title_en)
             self.failUnlessEqual(inst2.title, title_en)
             self.failUnlessEqual(inst2.title_en, title_en)
-            self.failUnlessEqual(inst2.title_de, None)
+            self.failUnlessEqual(inst2.title_de, '')
 
         # Value from original field is presented in current language:
         inst2 = models.TestModel(title_de=title_de, title_en=title_en)
@@ -338,7 +338,7 @@ class ModeltranslationTest(ModeltranslationTestBase):
         # Please note: '' and not None, because descriptor falls back to field default value
         self.failUnlessEqual(inst1.title, '')
         self.failUnlessEqual(inst1.title_en, title_en)
-        self.failUnlessEqual(inst1.title_de, None)
+        self.failUnlessEqual(inst1.title_de, '')
         # Assign current language value - de
         inst1.title = title_de
         self.failUnlessEqual(inst1.title, title_de)
@@ -366,14 +366,14 @@ class ModeltranslationTest(ModeltranslationTestBase):
         # Create model with value in de only...
         inst2 = models.TestModel(title=title_de)
         self.failUnlessEqual(inst2.title, title_de)
-        self.failUnlessEqual(inst2.title_en, None)
+        self.failUnlessEqual(inst2.title_en, '')
         self.failUnlessEqual(inst2.title_de, title_de)
 
         # In this test environment, fallback language is not set. So return value for en
         # will be field's default: ''
         with override('en'):
             self.failUnlessEqual(inst2.title, '')
-            self.failUnlessEqual(inst2.title_en, None)  # Language field access returns real value
+            self.failUnlessEqual(inst2.title_en, '')  # Language field access returns real value
 
         # However, by default FALLBACK_LANGUAGES is set to DEFAULT_LANGUAGE
         with default_fallback():
@@ -384,7 +384,7 @@ class ModeltranslationTest(ModeltranslationTestBase):
             # ... but for empty en fall back to de
             with override('en'):
                 self.failUnlessEqual(inst2.title, title_de)
-                self.failUnlessEqual(inst2.title_en, None)  # Still real value
+                self.failUnlessEqual(inst2.title_en, '')  # Still real value
 
     def test_fallback_values_1(self):
         """
@@ -512,19 +512,19 @@ class FallbackTests(ModeltranslationTestBase):
             title_en = 'title en'
             n = models.TestModel(title=title_de)
             self.assertEqual(n.title_de, title_de)
-            self.assertEqual(n.title_en, None)
+            self.assertEqual(n.title_en, '')
             self.assertEqual(n.title, title_de)
             trans_real.activate('en')
             self.assertEqual(n.title, title_de)  # since default fallback is de
 
             n = models.TestModel(title=title_en)
-            self.assertEqual(n.title_de, None)
+            self.assertEqual(n.title_de, '')
             self.assertEqual(n.title_en, title_en)
             self.assertEqual(n.title, title_en)
             trans_real.activate('de')
             self.assertEqual(n.title, title_en)  # since fallback for de is en
 
-            n.title_en = None
+            n.title_en = ''
             self.assertEqual(n.title, '')  # if all fallbacks fail, return field.get_default()
 
     def test_fallbacks_toggle(self):
@@ -532,13 +532,13 @@ class FallbackTests(ModeltranslationTestBase):
             m = models.TestModel(title='foo')
             with fallbacks(True):
                 self.assertEqual(m.title_de, 'foo')
-                self.assertEqual(m.title_en, None)
+                self.assertEqual(m.title_en, '')
                 self.assertEqual(m.title, 'foo')
                 with override('en'):
                     self.assertEqual(m.title, 'foo')
             with fallbacks(False):
                 self.assertEqual(m.title_de, 'foo')
-                self.assertEqual(m.title_en, None)
+                self.assertEqual(m.title_en, '')
                 self.assertEqual(m.title, 'foo')
                 with override('en'):
                     self.assertEqual(m.title, '')  # '' is the default
@@ -1007,13 +1007,13 @@ class OtherFieldsTest(ModeltranslationTestBase):
         self.assertEqual('de', get_language())
         self.assertEqual('4,8,15,16,23,42', inst.csi)
         self.assertEqual('4,8,15,16,23,42', inst.csi_de)
-        self.assertEqual(None, inst.csi_en)
+        self.assertEqual('', inst.csi_en)
 
         inst.csi = '23,42'
         inst.save()
         self.assertEqual('23,42', inst.csi)
         self.assertEqual('23,42', inst.csi_de)
-        self.assertEqual(None, inst.csi_en)
+        self.assertEqual('', inst.csi_en)
 
         trans_real.activate('en')
         inst.csi = '4,8,15,16,23,42'
@@ -1377,25 +1377,25 @@ class ModeltranslationTestRule3(ModeltranslationTestBase):
         n = models.TestModel(title='foo')
         self.assertEqual(n.title, 'foo')
         self.assertEqual(n.title_de, 'foo')
-        self.assertEqual(n.title_en, None)
+        self.assertEqual(n.title_en, '')
 
         # constructor
         n = models.TestModel(title_de=title, title='foo')
         self.assertEqual(n.title, title)
         self.assertEqual(n.title_de, title)
-        self.assertEqual(n.title_en, None)
+        self.assertEqual(n.title_en, '')
 
         # object.create
         n = models.TestModel.objects.create(title_de=title, title='foo')
         self.assertEqual(n.title, title)
         self.assertEqual(n.title_de, title)
-        self.assertEqual(n.title_en, None)
+        self.assertEqual(n.title_en, '')
 
         # Database save/load
         n = models.TestModel.objects.get(title_de=title)
         self.assertEqual(n.title, title)
         self.assertEqual(n.title_de, title)
-        self.assertEqual(n.title_en, None)
+        self.assertEqual(n.title_en, '')
 
         # This is not subject to Rule 3, because updates are not *at the ame time*
         n = models.TestModel()
@@ -1403,7 +1403,7 @@ class ModeltranslationTestRule3(ModeltranslationTestBase):
         n.title = 'foo'
         self.assertEqual(n.title, 'foo')
         self.assertEqual(n.title_de, 'foo')
-        self.assertEqual(n.title_en, None)
+        self.assertEqual(n.title_en, '')
 
     @staticmethod
     def _index(list, element):
@@ -1494,7 +1494,8 @@ class ModelValidationTest(ModeltranslationTestBase):
         # Check the translation field
         # Language is set to 'de' at this point
         self.failUnlessEqual(get_language(), 'de')
-        # Set translation field to a valid title
+        # Set translation fields to a valid title
+        n.title_en = ''
         n.title_de = 'Title'
         n.full_clean()
 
@@ -1511,7 +1512,7 @@ class ModelValidationTest(ModeltranslationTestBase):
                 n.full_clean()
 
         # Set translation field to an empty title
-        n.title_de = None
+        n.title_de = ''
         # Even though the original field isn't optional, translation fields are
         # per definition always optional. So we expect that the validation
         # object contains no error for title_de.
@@ -2160,19 +2161,19 @@ class TestManager(ModeltranslationTestBase):
         self.assertEqual('en', get_language())
         n = models.ManagerTestModel.objects.create(title='foo')
         self.assertEqual('foo', n.title_en)
-        self.assertEqual(None, n.title_de)
+        self.assertEqual('', n.title_de)
         self.assertEqual('foo', n.title)
 
         # The same result
         n = models.ManagerTestModel.objects.create(title_en='foo')
         self.assertEqual('foo', n.title_en)
-        self.assertEqual(None, n.title_de)
+        self.assertEqual('', n.title_de)
         self.assertEqual('foo', n.title)
 
         # Language suffixed version wins
         n = models.ManagerTestModel.objects.create(title='bar', title_en='foo')
         self.assertEqual('foo', n.title_en)
-        self.assertEqual(None, n.title_de)
+        self.assertEqual('', n.title_de)
         self.assertEqual('foo', n.title)
 
     def test_creation_population(self):
@@ -2201,7 +2202,7 @@ class TestManager(ModeltranslationTestBase):
         # This feature (for backward-compatibility) require populate method...
         n = models.ManagerTestModel.objects.create(title='foo')
         self.assertEqual('foo', n.title_en)
-        self.assertEqual(None, n.title_de)
+        self.assertEqual('', n.title_de)
         self.assertEqual('foo', n.title)
 
         # ... or MODELTRANSLATION_AUTO_POPULATE setting
@@ -2215,7 +2216,7 @@ class TestManager(ModeltranslationTestBase):
             # populate method has highest priority
             n = models.ManagerTestModel.objects.populate(False).create(title='foo')
             self.assertEqual('foo', n.title_en)
-            self.assertEqual(None, n.title_de)
+            self.assertEqual('', n.title_de)
             self.assertEqual('foo', n.title)
 
         # Populate ``default`` fills just the default translation.
@@ -2229,7 +2230,7 @@ class TestManager(ModeltranslationTestBase):
         with override('de'):
             m = qs.populate('default').create(title='foo', description='bar')
             self.assertEqual('foo', m.title_de)
-            self.assertEqual(None, m.title_en)
+            self.assertEqual('', m.title_en)
             self.assertEqual('bar', m.description_de)
             self.assertEqual(None, m.description_en)
 
@@ -2243,7 +2244,7 @@ class TestManager(ModeltranslationTestBase):
         with override('de'):
             m = qs.populate('required').create(title='foo', description='bar')
             self.assertEqual('foo', m.title_de)
-            self.assertEqual(None, m.title_en)
+            self.assertEqual('', m.title_en)
             self.assertEqual('bar', m.description_de)
             self.assertEqual(None, m.description_en)
 
@@ -2297,6 +2298,6 @@ class TestManager(ModeltranslationTestBase):
             call_command('loaddata', 'fixture.json', verbosity=0, commit=False, populate=False)
             m = models.TestModel.objects.get()
             self.assertEqual(m.title_en, 'foo')
-            self.assertEqual(m.title_de, None)
+            self.assertEqual(m.title_de, '')
             self.assertEqual(m.text_en, 'bar')
             self.assertEqual(m.text_de, None)
