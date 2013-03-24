@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from django import forms
 from django.core.exceptions import ImproperlyConfigured
 from django.db.models import fields
 
@@ -33,6 +34,15 @@ except AttributeError:
     pass
 
 
+class NONE:
+    """
+    Used for fallback options when they are not provided (``None`` can be
+    given as a fallback or undefined value) or to mark that a nullable value
+    is not yet known and needs to be computed (e.g. field default).
+    """
+    pass
+
+
 def create_translation_field(model, field_name, lang):
     """
     Translation field factory. Returns a ``TranslationField`` based on a
@@ -63,6 +73,20 @@ def field_factory(baseclass):
     TranslationFieldSpecific.__name__ = 'Translation%s' % baseclass.__name__
 
     return TranslationFieldSpecific
+
+
+def create_nullable_formfield(form_class):
+    """
+    Creates a form class subclass that ensures that ``None`` is not cast to
+    anything (like the empty string with ``CharField`` and its derivatives).
+    """
+    class NullableField(form_class):
+        def to_python(self, value):
+            if value is None:
+                return value
+            return super(NullableField, self).to_python(value)
+    NullableField.__name__ = 'Nullable%s' % form_class.__name__
+    return NullableField
 
 
 class TranslationField(object):
@@ -151,6 +175,22 @@ class TranslationField(object):
             column = attname
         return attname, column
 
+    def formfield(self, *args, **kwargs):
+        """
+        If the original field is nullable and uses ``forms.CharField`` subclass
+        as its form input, we patch the form field, so it doesn't cast ``None``
+        to anything.
+
+        The ``forms.CharField`` somewhat surprising behaviour is documented as a
+        "won't fix": https://code.djangoproject.com/ticket/9590.
+        """
+        formfield = super(TranslationField, self).formfield(*args, **kwargs)
+        if (self.translated_field.null and
+                issubclass(formfield.__class__, forms.CharField)):
+            kwargs['form_class'] = create_nullable_formfield(formfield.__class__)
+            formfield = super(TranslationField, self).formfield(*args, **kwargs)
+        return formfield
+
     def south_field_triple(self):
         """
         Returns a suitable description of this field for South.
@@ -172,35 +212,49 @@ class TranslationFieldDescriptor(object):
     """
     A descriptor used for the original translated field.
     """
-    def __init__(self, field, fallback_value=None, fallback_languages=None):
+    def __init__(self, field, fallback_languages=None, fallback_value=NONE,
+                 fallback_undefined=NONE):
         """
-        The ``name`` is the name of the field (which is not available in the
-        descriptor by default - this is Python behaviour).
+        Stores fallback options and the original field, so we know it's name
+        and default.
         """
         self.field = field
-        self.fallback_value = fallback_value
         self.fallback_languages = fallback_languages
+        self.fallback_value = fallback_value
+        self.fallback_undefined = fallback_undefined
 
     def __set__(self, instance, value):
-        lang = get_language()
-        loc_field_name = build_localized_fieldname(self.field.name, lang)
-        # also update the translation field of the current language
+        """
+        Updates the translation field for the current language.
+        """
+        loc_field_name = build_localized_fieldname(self.field.name, get_language())
         setattr(instance, loc_field_name, value)
 
     def __get__(self, instance, owner):
+        """
+        Returns value from the translation field for the current language, or
+        value for some another language according to fallback languages, or the
+        custom fallback value, or field's default value.
+        """
         if instance is None:
             return self
+        default = NONE
+        undefined = self.fallback_undefined
+        if undefined is NONE:
+            default = self.field.get_default()
+            undefined = default
         langs = resolution_order(get_language(), self.fallback_languages)
         for lang in langs:
             loc_field_name = build_localized_fieldname(self.field.name, lang)
             val = getattr(instance, loc_field_name, None)
-            # Here we check only for None and '', because e.g. 0 should not fall back.
-            if val is not None and val != '':
+            if val is not None and val != undefined:
                 return val
-        if self.fallback_value is None or not mt_settings.ENABLE_FALLBACKS:
-            return self.field.get_default()
-        else:
+        if mt_settings.ENABLE_FALLBACKS and self.fallback_value is not NONE:
             return self.fallback_value
+        else:
+            if default is NONE:
+                default = self.field.get_default()
+            return default
 
 
 class TranslatedRelationIdDescriptor(object):
