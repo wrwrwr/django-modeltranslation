@@ -45,3 +45,8 @@ for key, value in FALLBACK_LANGUAGES.items():
             raise ImproperlyConfigured(
                 'MODELTRANSLATION_FALLBACK_LANGUAGES: "%s" not in LANGUAGES setting.' % lang)
 ENABLE_FALLBACKS = getattr(settings, 'MODELTRANSLATION_ENABLE_FALLBACKS', True)
+
+SOUTH_IGNORE = getattr(settings, 'MODELTRANSLATION_SOUTH_IGNORE', False)
+if (SOUTH_IGNORE and "south" in settings.INSTALLED_APPS):
+    from south.modelsinspector import add_ignored_fields
+    add_ignored_fields(["^modeltranslation\.fields\.Translation"])
