@@ -2335,6 +2335,40 @@ class TestManager(ModeltranslationTestBase):
             self.assertEqual(m.text_en, 'bar')
             self.assertEqual(m.text_de, None)
 
+    def test_fallbacks(self):
+        fallback_langs = {'default': ('en',), 'de': ('de',)}
+        with reload_override_settings(
+                MODELTRANSLATION_FALLBACK_LANGUAGES=fallback_langs):
+            trans_real.activate('en')
+            manager = models.TestModel.objects
+            m1 = manager.create(title='title1', text='text')
+            m2 = manager.create(title='title2', text='text', url='url')
+            no_fallbacks = manager.fallbacks(False)
+            fallbacks = manager.fallbacks(True)
+            with override('de'):
+                with self.assertRaises(models.TestModel.DoesNotExist):
+                    no_fallbacks.get(title='title1')
+                self.assertEqual(fallbacks.get(title='title1'), m1)
+
+                self.assertEqual(tuple(no_fallbacks.filter(text='text')), ())
+                self.assertEqual(tuple(fallbacks.filter(text='text')), (m1, m2))
+
+                self.assertEqual(tuple(no_fallbacks.filter(title__startswith='t')), ())
+                self.assertEqual(tuple(fallbacks.filter(title__startswith='t')), (m1, m2))
+
+                # TODO: Non-fallback rewriting should probably also exclude
+                # null translation fields (just `where not title = "title1"`
+                # doesn't include null fields)?
+                # self.assertEqual(tuple(no_fallbacks.exclude(title='title1')), (m1, m2))
+                self.assertEqual(tuple(fallbacks.exclude(title='title1')), (m2,))
+
+                # self.assertEqual(
+                #    tuple(no_fallbacks.filter(~Q(title__endswith='2') | Q(text__contains='x'))),
+                #    ())
+                self.assertEqual(
+                    tuple(fallbacks.filter(~Q(title__endswith='2') | Q(text__contains='x'))),
+                    (m1, m2))
+
     def assertDeferred(self, use_defer, *fields):
         manager = models.TestModel.objects.defer if use_defer else models.TestModel.objects.only
         inst1 = manager(*fields)[0]
