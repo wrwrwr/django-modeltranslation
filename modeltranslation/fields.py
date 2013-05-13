@@ -123,6 +123,7 @@ class TranslationField(object):
                     self.related_query_name(), self.language)
                 self.related_query_name = lambda: loc_related_query_name
             self.rel.related_name = build_localized_fieldname(current, self.language)
+            self.rel.field = self  # Django 1.6
             if hasattr(self.rel.to._meta, '_related_objects_cache'):
                 del self.rel.to._meta._related_objects_cache
 
@@ -150,6 +151,18 @@ class TranslationField(object):
         else:
             column = attname
         return attname, column
+
+    def save_form_data(self, instance, data):
+        # Allow 3rd-party apps forms to be saved using only translated field name.
+        # When translated field (e.g. 'name') is specified and translation field (e.g. 'name_en')
+        # not, we assume that form was saved without knowledge of modeltranslation and we make
+        # things right:
+        # Translated field is saved first, settings respective translation field value. Then
+        # translation field is being saved without value - and we handle this here (only for
+        # active language).
+        if self.language == get_language() and getattr(instance, self.name) and not data:
+            return
+        super(TranslationField, self).save_form_data(instance, data)
 
     def south_field_triple(self):
         """
@@ -182,6 +195,10 @@ class TranslationFieldDescriptor(object):
         self.fallback_languages = fallback_languages
 
     def __set__(self, instance, value):
+        if getattr(instance, '_mt_init', False):
+            # When assignment takes place in model instance constructor, don't set value.
+            # This is essential for only/defer to work, but I think it's sensible anyway.
+            return
         lang = get_language()
         loc_field_name = build_localized_fieldname(self.field.name, lang)
         # also update the translation field of the current language
