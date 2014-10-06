@@ -344,6 +344,8 @@ var google, django, gettext;
 
         var MainSwitch = {
             languages: [],
+            currentLanguage: 0,
+            untabbed: new Object(),
             $select: $('<select>'),
 
             init: function(groupedTranslations, tabs) {
@@ -352,6 +354,10 @@ var google, django, gettext;
                     $.each(languages, function (lang) {
                         if ($.inArray(lang, self.languages) < 0) {
                             self.languages.push(lang);
+                        }
+                        // Collect inputs that did not make it into tabs.
+                        if ($(languages[lang]).closest('#tab_' + id + '_' + lang).length == 0) {
+                            self.untabbed[id] = groupedTranslations[id];
                         }
                     });
                 });
@@ -366,12 +372,22 @@ var google, django, gettext;
             update: function(tabs) {
                 var self = this;
                 this.$select.change(function () {
+                    self.currentLanguage = parseInt(self.$select.val(), 10);
+
+                    // Activate tab for the selected language.
                     $.each(tabs, function (idx, tab) {
                         try { //jquery ui => 1.10 api changed, we keep backward compatibility
-                            tab.tabs('select', parseInt(self.$select.val(), 10));
+                            tab.tabs('select', self.currentLanguage);
                         } catch(e) {
-                            tab.tabs('option', 'active', parseInt(self.$select.val(), 10));
+                            tab.tabs('option', 'active', self.currentLanguage);
                         }
+                    });
+
+                    // Hide untabbed fields for non-active languages.
+                    $.each(self.untabbed, function (id, fields) {
+                        $.each(fields, function (lang, field) {
+                            $(field).parent().toggle(lang == self.languages[self.currentLanguage]);
+                        });
                     });
                 });
             },
