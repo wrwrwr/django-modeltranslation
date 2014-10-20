@@ -63,7 +63,7 @@ class Command(NoArgsCommand):
                             self.stdout.write('   %s' % sentence)
                     if self.interactive:
                         answer = None
-                        prompt = '\nAre you sure that you want to execute the previous SQL: (y/n) [n]: '
+                        prompt = '\nAre you sure that you want to execute the printed SQL: (y/n) [n]: '
                         while answer not in ('', 'y', 'n', 'yes', 'no'):
                             answer = moves.input(prompt).strip()
                             prompt = 'Please answer yes or no: '
