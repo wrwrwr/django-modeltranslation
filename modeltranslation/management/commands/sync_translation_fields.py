@@ -41,7 +41,7 @@ class Command(NoArgsCommand):
         models = translator.get_registered_models(abstract=False)
         for model in models:
             db_table = model._meta.db_table
-            model_full_name = '%s.%s' % (model._meta.app_label, model._meta.module_name)
+            model_full_name = '%s.%s' % (model._meta.app_label, model._meta.object_name)
             opts = translator.get_options_for_model(model)
             for field_name, fields in opts.local_fields.items():
                 field = list(fields)[0]
@@ -49,33 +49,34 @@ class Command(NoArgsCommand):
                 missing_langs = self.get_missing_languages(column_name, db_table)
                 if missing_langs:
                     found_missing_fields = True
+                    field_full_name = '%s.%s' % (model_full_name, field_name)
                     if self.verbosity > 0:
-                        self.stdout.write('Missing languages in "%s" field from "%s" model: %s' % (
-                            field_name, model_full_name, ', '.join(missing_langs)))
-                    sql_sentences = self.get_sync_sql(field_name, missing_langs, model)
+                        self.stdout.write('Missing translation columns for field "%s": %s' % (
+                            field_full_name, ', '.join(missing_langs)))
+                    statements = self.get_add_column_statements(field_name, missing_langs, model)
                     if self.interactive or self.verbosity > 0:
-                        self.stdout.write('\nSQL to synchronize "%s" schema:' % model_full_name)
-                        for sentence in sql_sentences:
-                            self.stdout.write('   %s' % sentence)
+                        self.stdout.write('\nStatements to be executed for "%s":' % field_full_name)
+                        for statement in statements:
+                            self.stdout.write('   %s' % statement)
                     if self.interactive:
                         answer = None
-                        prompt = '\nAre you sure that you want to execute the printed SQL: (y/n) [n]: '
+                        prompt = '\nAre you sure that you want to execute the printed statements: (y/n) [n]: '
                         while answer not in ('', 'y', 'n', 'yes', 'no'):
                             answer = moves.input(prompt).strip()
                             prompt = 'Please answer yes or no: '
-                        execute_sql = (answer == 'y' or answer == 'yes')
+                        execute = (answer == 'y' or answer == 'yes')
                     else:
-                        execute_sql = True
-                    if execute_sql:
+                        execute = True
+                    if execute:
                         if self.verbosity > 0:
-                            self.stdout.write('Executing SQL...')
-                        for sentence in sql_sentences:
-                            self.cursor.execute(sentence)
+                            self.stdout.write('Executing statements...')
+                        for statement in statements:
+                            self.cursor.execute(statement)
                         if self.verbosity > 0:
                             self.stdout.write('Done')
                     else:
                         if self.verbosity > 0:
-                            self.stdout.write('SQL not executed')
+                            self.stdout.write('Statements not executed')
 
         transaction.commit_unless_managed()
 
@@ -101,21 +102,21 @@ class Command(NoArgsCommand):
                 missing_langs.append(lang_code)
         return missing_langs
 
-    def get_sync_sql(self, field_name, missing_langs, model):
+    def get_add_column_statements(self, field_name, missing_langs, model):
         """
-        Returns SQL needed for sync schema for a new translatable field.
+        Returns database statements needed to add missing columns for the field.
         """
         qn = connection.ops.quote_name
         style = no_style()
-        sql_output = []
+        statements = []
         db_table = model._meta.db_table
         for lang in missing_langs:
             new_field = build_localized_fieldname(field_name, lang)
             f = model._meta.get_field(new_field)
             col_type = f.db_type(connection=connection)
             field_sql = [style.SQL_FIELD(qn(f.column)), style.SQL_COLTYPE(col_type)]
-            stmt = "ALTER TABLE %s ADD COLUMN %s" % (qn(db_table), ' '.join(field_sql))
+            statement = 'ALTER TABLE %s ADD COLUMN %s' % (qn(db_table), ' '.join(field_sql))
             if not f.null:
-                stmt += " " + style.SQL_KEYWORD('NOT NULL')
-            sql_output.append(stmt + ";")
-        return sql_output
+                statement += ' ' + style.SQL_KEYWORD('NOT NULL')
+            statements.append(statement + ';')
+        return statements
