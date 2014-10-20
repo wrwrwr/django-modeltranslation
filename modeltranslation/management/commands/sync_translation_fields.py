@@ -21,23 +21,6 @@ from modeltranslation.translator import translator
 from modeltranslation.utils import build_localized_fieldname
 
 
-def ask_for_confirmation(sql_sentences, model_full_name, interactive, verbosity, stdout):
-    if interactive or verbosity > 0:
-        stdout.write('\nSQL to synchronize "%s" schema:' % model_full_name)
-        for sentence in sql_sentences:
-            stdout.write('   %s' % sentence)
-    while True:
-        prompt = '\nAre you sure that you want to execute the previous SQL: (y/n) [n]: '
-        if interactive:
-            answer = moves.input(prompt).strip()
-            if answer not in ('', 'y', 'n', 'yes', 'no'):
-                stdout.write('Please answer yes or no')
-            else:
-                return (answer == 'y' or answer == 'yes')
-        else:
-            return True
-
-
 class Command(NoArgsCommand):
     help = ('Detect new translatable fields or new available languages and'
             ' sync database structure. Does not remove columns of removed'
@@ -74,8 +57,19 @@ class Command(NoArgsCommand):
                         self.stdout.write('Missing languages in "%s" field from "%s" model: %s' % (
                             field_name, model_full_name, ', '.join(missing_langs)))
                     sql_sentences = self.get_sync_sql(field_name, missing_langs, model)
-                    execute_sql = ask_for_confirmation(
-                        sql_sentences, model_full_name, self.interactive, self.verbosity, self.stdout)
+                    if self.interactive or self.verbosity > 0:
+                        self.stdout.write('\nSQL to synchronize "%s" schema:' % model_full_name)
+                        for sentence in sql_sentences:
+                            self.stdout.write('   %s' % sentence)
+                    if self.interactive:
+                        answer = None
+                        prompt = '\nAre you sure that you want to execute the previous SQL: (y/n) [n]: '
+                        while answer not in ('', 'y', 'n', 'yes', 'no'):
+                            answer = moves.input(prompt).strip()
+                            prompt = 'Please answer yes or no: '
+                        execute_sql = (answer == 'y' or answer == 'yes')
+                    else:
+                        execute_sql = True
                     if execute_sql:
                         if self.verbosity > 0:
                             self.stdout.write('Executing SQL...')
