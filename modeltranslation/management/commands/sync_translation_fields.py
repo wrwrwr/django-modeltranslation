@@ -14,7 +14,7 @@ from optparse import make_option
 import django
 from django.core.management.base import BaseCommand
 from django.core.management.color import no_style
-from django.db import connection, transaction
+from django.db import connection
 from django.utils.six import moves
 
 from modeltranslation.settings import AVAILABLE_LANGUAGES
@@ -90,9 +90,6 @@ class Command(BaseCommand):
                 else:
                     if self.verbosity > 0:
                         self.stdout.write('Statements not executed')
-
-        if django.VERSION < (1, 6) and found_missing_columns:
-            transaction.commit_unless_managed()
 
         if self.verbosity > 0 and not found_missing_columns:
             self.stdout.write('No new translatable fields detected')
