@@ -21,17 +21,17 @@ from modeltranslation.translator import translator
 from modeltranslation.utils import build_localized_fieldname
 
 
-def ask_for_confirmation(sql_sentences, model_full_name, interactive, verbosity):
+def ask_for_confirmation(sql_sentences, model_full_name, interactive, verbosity, stdout):
     if interactive or verbosity > 0:
-        print('\nSQL to synchronize "%s" schema:' % model_full_name)
+        stdout.write('\nSQL to synchronize "%s" schema:' % model_full_name)
         for sentence in sql_sentences:
-            print('   %s' % sentence)
+            stdout.write('   %s' % sentence)
     while True:
         prompt = '\nAre you sure that you want to execute the previous SQL: (y/n) [n]: '
         if interactive:
             answer = moves.input(prompt).strip()
             if answer not in ('', 'y', 'n', 'yes', 'no'):
-                print('Please answer yes or no')
+                stdout.write('Please answer yes or no')
             else:
                 return (answer == 'y' or answer == 'yes')
         else:
@@ -71,26 +71,26 @@ class Command(NoArgsCommand):
                 if missing_langs:
                     found_missing_fields = True
                     if self.verbosity > 0:
-                        print('Missing languages in "%s" field from "%s" model: %s' % (
+                        self.stdout.write('Missing languages in "%s" field from "%s" model: %s' % (
                             field_name, model_full_name, ', '.join(missing_langs)))
                     sql_sentences = self.get_sync_sql(field_name, missing_langs, model)
                     execute_sql = ask_for_confirmation(
-                        sql_sentences, model_full_name, self.interactive, self.verbosity)
+                        sql_sentences, model_full_name, self.interactive, self.verbosity, self.stdout)
                     if execute_sql:
                         if self.verbosity > 0:
-                            print('Executing SQL...')
+                            self.stdout.write('Executing SQL...')
                         for sentence in sql_sentences:
                             self.cursor.execute(sentence)
                         if self.verbosity > 0:
-                            print('Done')
+                            self.stdout.write('Done')
                     else:
                         if self.verbosity > 0:
-                            print('SQL not executed')
+                            self.stdout.write('SQL not executed')
 
         transaction.commit_unless_managed()
 
         if self.verbosity > 0 and not found_missing_fields:
-            print('No new translatable fields detected')
+            self.stdout.write('No new translatable fields detected')
 
     def get_table_fields(self, db_table):
         """
