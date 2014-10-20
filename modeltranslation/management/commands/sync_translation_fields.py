@@ -30,16 +30,12 @@ def ask_for_confirmation(sql_sentences, model_full_name, interactive, verbosity)
         prompt = '\nAre you sure that you want to execute the previous SQL: (y/n) [n]: '
         if interactive:
             answer = moves.input(prompt).strip()
+            if answer not in ('', 'y', 'n', 'yes', 'no'):
+                print('Please answer yes or no')
+            else:
+                return (answer == 'y' or answer == 'yes')
         else:
-            answer = 'y'
-        if answer == '':
-            return False
-        elif answer not in ('y', 'n', 'yes', 'no'):
-            print('Please answer yes or no')
-        elif answer == 'y' or answer == 'yes':
             return True
-        else:
-            return False
 
 
 class Command(NoArgsCommand):
