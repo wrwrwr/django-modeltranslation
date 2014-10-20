@@ -27,11 +27,11 @@ class Command(NoArgsCommand):
                 self.app_config = apps.get_app_config(self.app_config)
 
         if self.verbosity > 0:
-            self.stdout.write("Using default language: %s\n" % DEFAULT_LANGUAGE)
+            self.stdout.write("Using default language: {}\n".format(DEFAULT_LANGUAGE))
         models = translator.get_registered_models(abstract=False, app_config=self.app_config)
         for model in models:
             if self.verbosity > 0:
-                self.stdout.write("Updating data of model '%s'\n" % model)
+                self.stdout.write("Updating data of model '{}'\n".format(model))
             opts = translator.get_options_for_model(model)
             for field_name in opts.fields.keys():
                 def_lang_fieldname = build_localized_fieldname(field_name, DEFAULT_LANGUAGE)
@@ -40,7 +40,7 @@ class Command(NoArgsCommand):
                 q = Q(**{def_lang_fieldname: None})
                 field = model._meta.get_field(field_name)
                 if field.empty_strings_allowed:
-                    q |= Q(**{def_lang_fieldname: ""})
+                    q |= Q(**{def_lang_fieldname: ''})
 
                 model._default_manager.filter(q).rewrite(False).update(
                     **{def_lang_fieldname: F(field_name)})

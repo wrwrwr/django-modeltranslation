@@ -50,7 +50,7 @@ class Command(NoArgsCommand):
         models = translator.get_registered_models(abstract=False, app_config=self.app_config)
         for model in models:
             db_table = model._meta.db_table
-            model_full_name = '%s.%s' % (model._meta.app_label, model._meta.object_name)
+            model_full_name = '{0.app_label}.{0.object_name}'.format(model._meta)
 
             opts = translator.get_options_for_model(model)
             for field_name in opts.local_fields.keys():
@@ -60,16 +60,16 @@ class Command(NoArgsCommand):
                 if not missing_columns:
                     continue
                 found_missing_columns = True
-                field_full_name = '%s.%s' % (model_full_name, field_name)
+                field_full_name = '{}.{}'.format(model_full_name, field_name)
                 if self.verbosity > 0:
-                    self.stdout.write('Missing translation columns for field "%s": %s' % (
+                    self.stdout.write('Missing translation columns for field "{}": {}'.format(
                         field_full_name, ', '.join(missing_columns.keys())))
 
                 statements = self.generate_add_column_statements(field, missing_columns, model)
                 if self.interactive or self.verbosity > 0:
-                    self.stdout.write('\nStatements to be executed for "%s":' % field_full_name)
+                    self.stdout.write('\nStatements to be executed for "{}":'.format(field_full_name))
                     for statement in statements:
-                        self.stdout.write('   %s' % statement)
+                        self.stdout.write('   {}'.format(statement))
                 if self.interactive:
                     answer = None
                     prompt = ('\nAre you sure that you want to execute the printed statements:'
@@ -123,9 +123,9 @@ class Command(NoArgsCommand):
         db_table = model._meta.db_table
         db_column_type = field.db_type(connection=connection)
         for lang_column in missing_columns.values():
-            statement = 'ALTER TABLE %s ADD COLUMN %s %s' % (qn(db_table),
-                                                             style.SQL_FIELD(qn(lang_column)),
-                                                             style.SQL_COLTYPE(db_column_type))
+            statement = 'ALTER TABLE {} ADD COLUMN {} {}'.format(qn(db_table),
+                                                                 style.SQL_FIELD(qn(lang_column)),
+                                                                 style.SQL_COLTYPE(db_column_type))
             if not model._meta.get_field(lang_column).null:
                 # Just "not field.null" if we change the nullability politics.
                 statement += ' ' + style.SQL_KEYWORD('NOT NULL')
