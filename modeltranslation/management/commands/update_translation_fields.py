@@ -1,6 +1,4 @@
 # -*- coding: utf-8 -*-
-from optparse import make_option
-
 from django.db.models import F, Q
 from django.core.management.base import BaseCommand
 
@@ -13,10 +11,9 @@ class Command(BaseCommand):
     help = ('Updates empty values of default translation fields using'
             ' values from original fields (in all translated models).')
 
-    option_list = BaseCommand.option_list + (
-        make_option('--app', '--app_config', default=None,
-                    help='Limit updating values to a single app. At least Django 1.7 required.'),
-    )
+    def add_arguments(self, parser):
+        parser.add_argument('--app', '--app_config', default=None,
+                            help='Limit updating values to a single app.')
 
     def handle(self, **options):
         self.verbosity = int(options['verbosity'])

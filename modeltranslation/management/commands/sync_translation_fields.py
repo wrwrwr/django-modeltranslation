@@ -9,9 +9,6 @@ You will need to execute this command in two cases:
 
 Credits: Heavily inspired by django-transmeta's sync_transmeta_db command.
 """
-from optparse import make_option
-
-import django
 from django.core.management.base import BaseCommand
 from django.core.management.color import no_style
 from django.db import connection
@@ -27,13 +24,11 @@ class Command(BaseCommand):
             ' sync database structure. Does not remove columns of removed'
             ' languages or undeclared fields.')
 
-    option_list = BaseCommand.option_list + (
-        make_option('--noinput', action='store_false', dest='interactive', default=True,
-                    help='Do NOT prompt the user for input of any kind.'),
-        make_option('--app', '--app_config', default=None,
-                    help='Limit looking for missing columns to a single app.'
-                         ' At least Django 1.7 required.'),
-    )
+    def add_arguments(self, parser):
+        parser.add_argument('--noinput', action='store_false', default=True,
+                            help='Do NOT prompt the user for input of any kind.')
+        parser.add_argument('--app', '--app_config', default=None,
+                            help='Limit looking for missing columns to a single app.')
 
     def handle(self, **options):
         self.cursor = connection.cursor()
