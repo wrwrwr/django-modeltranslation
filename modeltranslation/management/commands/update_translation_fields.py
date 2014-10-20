@@ -2,23 +2,23 @@
 from optparse import make_option
 
 from django.db.models import F, Q
-from django.core.management.base import NoArgsCommand
+from django.core.management.base import BaseCommand
 
 from modeltranslation.settings import DEFAULT_LANGUAGE
 from modeltranslation.translator import translator
 from modeltranslation.utils import build_localized_fieldname
 
 
-class Command(NoArgsCommand):
+class Command(BaseCommand):
     help = ('Updates empty values of default translation fields using'
             ' values from original fields (in all translated models).')
 
-    option_list = NoArgsCommand.option_list + (
+    option_list = BaseCommand.option_list + (
         make_option('--app', '--app_config', default=None,
                     help='Limit updating values to a single app. At least Django 1.7 required.'),
     )
 
-    def handle_noargs(self, **options):
+    def handle(self, **options):
         self.verbosity = int(options['verbosity'])
         self.app_config = options.get('app')
         if self.app_config is not None:

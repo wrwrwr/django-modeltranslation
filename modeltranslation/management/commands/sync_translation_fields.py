@@ -12,7 +12,7 @@ Credits: Heavily inspired by django-transmeta's sync_transmeta_db command.
 from optparse import make_option
 
 import django
-from django.core.management.base import NoArgsCommand
+from django.core.management.base import BaseCommand
 from django.core.management.color import no_style
 from django.db import connection, transaction
 from django.utils.six import moves
@@ -22,12 +22,12 @@ from modeltranslation.translator import translator
 from modeltranslation.utils import build_localized_fieldname
 
 
-class Command(NoArgsCommand):
+class Command(BaseCommand):
     help = ('Detect new translatable fields or new available languages and'
             ' sync database structure. Does not remove columns of removed'
             ' languages or undeclared fields.')
 
-    option_list = NoArgsCommand.option_list + (
+    option_list = BaseCommand.option_list + (
         make_option('--noinput', action='store_false', dest='interactive', default=True,
                     help='Do NOT prompt the user for input of any kind.'),
         make_option('--app', '--app_config', default=None,
@@ -35,7 +35,7 @@ class Command(NoArgsCommand):
                          ' At least Django 1.7 required.'),
     )
 
-    def handle_noargs(self, **options):
+    def handle(self, **options):
         self.cursor = connection.cursor()
         self.introspection = connection.introspection
         self.interactive = options['interactive']
