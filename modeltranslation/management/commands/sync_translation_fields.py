@@ -11,6 +11,7 @@ Credits: Heavily inspired by django-transmeta's sync_transmeta_db command.
 """
 from optparse import make_option
 
+import django
 from django.core.management.base import NoArgsCommand
 from django.core.management.color import no_style
 from django.db import connection, transaction
@@ -78,7 +79,8 @@ class Command(NoArgsCommand):
                         if self.verbosity > 0:
                             self.stdout.write('Statements not executed')
 
-        transaction.commit_unless_managed()
+        if django.VERSION < (1, 6) and found_missing_fields:
+            transaction.commit_unless_managed()
 
         if self.verbosity > 0 and not found_missing_fields:
             self.stdout.write('No new translatable fields detected')
