@@ -45,8 +45,8 @@ class Command(NoArgsCommand):
             opts = translator.get_options_for_model(model)
             for field_name, fields in opts.local_fields.items():
                 field = list(fields)[0]
-                column_name = field.db_column if field.db_column else field_name
-                missing_langs = self.get_missing_languages(column_name, db_table)
+                db_column = field.db_column if field.db_column else field_name
+                missing_langs = self.get_missing_languages(db_column, db_table)
                 if missing_langs:
                     found_missing_fields = True
                     field_full_name = '%s.%s' % (model_full_name, field_name)
@@ -83,22 +83,17 @@ class Command(NoArgsCommand):
         if self.verbosity > 0 and not found_missing_fields:
             self.stdout.write('No new translatable fields detected')
 
-    def get_table_fields(self, db_table):
+    def get_missing_languages(self, db_column, db_table):
         """
-        Gets table fields from schema.
-        """
-        db_table_desc = self.introspection.get_table_description(self.cursor, db_table)
-        return [t[0] for t in db_table_desc]
-
-    def get_missing_languages(self, column_name, db_table):
-        """
-        Returns codes of languages for which the given field does not have a
-        translation field.
+        Returns codes of languages for which the given field doesn't have a
+        translation column in the database.
         """
         missing_langs = []
-        db_table_fields = self.get_table_fields(db_table)
+        table_description = self.introspection.get_table_description(self.cursor, db_table)
+        table_columns = (t[0] for t in table_description)
         for lang_code in AVAILABLE_LANGUAGES:
-            if build_localized_fieldname(column_name, lang_code) not in db_table_fields:
+            lang_column = build_localized_fieldname(db_column, lang_code)
+            if lang_column not in table_columns:
                 missing_langs.append(lang_code)
         return missing_langs
 
