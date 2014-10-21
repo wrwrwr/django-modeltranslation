@@ -47,7 +47,7 @@ class Command(NoArgsCommand):
             for field_name, fields in opts.local_fields.items():
                 field = list(fields)[0]
                 db_column = field.db_column if field.db_column else field_name
-                missing_langs = self.get_missing_languages(db_column, db_table)
+                missing_langs = self.find_missing_languages(db_column, db_table)
                 if not missing_langs:
                     continue
                 found_missing_fields = True
@@ -55,7 +55,7 @@ class Command(NoArgsCommand):
                 if self.verbosity > 0:
                     self.stdout.write('Missing translation columns for field "%s": %s' % (
                         field_full_name, ', '.join(missing_langs)))
-                statements = self.get_add_column_statements(field_name, missing_langs, model)
+                statements = self.generate_add_column_statements(field_name, missing_langs, model)
                 if self.interactive or self.verbosity > 0:
                     self.stdout.write('\nStatements to be executed for "%s":' % field_full_name)
                     for statement in statements:
@@ -86,7 +86,7 @@ class Command(NoArgsCommand):
         if self.verbosity > 0 and not found_missing_fields:
             self.stdout.write('No new translatable fields detected')
 
-    def get_missing_languages(self, db_column, db_table):
+    def find_missing_languages(self, db_column, db_table):
         """
         Returns codes of languages for which the given field doesn't have a
         translation column in the database.
@@ -100,21 +100,23 @@ class Command(NoArgsCommand):
                 missing_langs.append(lang_code)
         return missing_langs
 
-    def get_add_column_statements(self, field_name, missing_langs, model):
+    def generate_add_column_statements(self, field_name, missing_langs, model):
         """
         Returns database statements needed to add missing columns for the field.
         """
-        qn = connection.ops.quote_name
-        style = no_style()
         statements = []
+        style = no_style()
+        qn = connection.ops.quote_name
         db_table = model._meta.db_table
         for lang in missing_langs:
-            new_field = build_localized_fieldname(field_name, lang)
-            f = model._meta.get_field(new_field)
-            col_type = f.db_type(connection=connection)
-            field_sql = [style.SQL_FIELD(qn(f.column)), style.SQL_COLTYPE(col_type)]
-            statement = 'ALTER TABLE %s ADD COLUMN %s' % (qn(db_table), ' '.join(field_sql))
-            if not f.null:
+            new_field_name = build_localized_fieldname(field_name, lang)
+            new_field = model._meta.get_field(new_field_name)
+            db_column = new_field.column
+            db_column_type = new_field.db_type(connection=connection)
+            statement = 'ALTER TABLE %s ADD COLUMN %s %s' % (qn(db_table),
+                                                             style.SQL_FIELD(qn(db_column)),
+                                                             style.SQL_COLTYPE(db_column_type))
+            if not new_field.null:
                 statement += ' ' + style.SQL_KEYWORD('NOT NULL')
             statements.append(statement + ';')
         return statements
