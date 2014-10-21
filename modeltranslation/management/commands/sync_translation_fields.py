@@ -38,7 +38,7 @@ class Command(NoArgsCommand):
         self.interactive = options['interactive']
         self.verbosity = int(options.get('verbosity'))
 
-        found_missing_fields = False
+        found_missing_columns = False
         models = translator.get_registered_models(abstract=False)
         for model in models:
             db_table = model._meta.db_table
@@ -47,10 +47,10 @@ class Command(NoArgsCommand):
             for field_name, fields in opts.local_fields.items():
                 field = list(fields)[0]
                 db_column = field.db_column if field.db_column else field_name
-                missing_langs = self.find_missing_languages(db_column, db_table)
+                missing_langs = self.find_missing_columns(db_column, db_table)
                 if not missing_langs:
                     continue
-                found_missing_fields = True
+                found_missing_columns = True
                 field_full_name = '%s.%s' % (model_full_name, field_name)
                 if self.verbosity > 0:
                     self.stdout.write('Missing translation columns for field "%s": %s' % (
@@ -81,13 +81,13 @@ class Command(NoArgsCommand):
                     if self.verbosity > 0:
                         self.stdout.write('Statements not executed')
 
-        if django.VERSION < (1, 6) and found_missing_fields:
+        if django.VERSION < (1, 6) and found_missing_columns:
             transaction.commit_unless_managed()
 
-        if self.verbosity > 0 and not found_missing_fields:
+        if self.verbosity > 0 and not found_missing_columns:
             self.stdout.write('No new translatable fields detected')
 
-    def find_missing_languages(self, db_column, db_table):
+    def find_missing_columns(self, db_column, db_table):
         """
         Returns codes of languages for which the given field doesn't have a
         translation column in the database.
