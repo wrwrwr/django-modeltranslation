@@ -62,7 +62,8 @@ class Command(NoArgsCommand):
                         self.stdout.write('   %s' % statement)
                 if self.interactive:
                     answer = None
-                    prompt = '\nAre you sure that you want to execute the printed statements: (y/n) [n]: '
+                    prompt = ('\nAre you sure that you want to execute the printed statements:'
+                              ' (y/n) [n]: ')
                     while answer not in ('', 'y', 'n', 'yes', 'no'):
                         answer = moves.input(prompt).strip()
                         prompt = 'Please answer yes or no: '
@@ -102,7 +103,8 @@ class Command(NoArgsCommand):
 
     def generate_add_column_statements(self, field_name, missing_langs, model):
         """
-        Returns database statements needed to add missing columns for the field.
+        Returns database statements needed to add missing columns for the
+        field.
         """
         statements = []
         style = no_style()
