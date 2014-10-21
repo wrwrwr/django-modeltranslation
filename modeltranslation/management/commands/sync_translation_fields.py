@@ -48,36 +48,37 @@ class Command(NoArgsCommand):
                 field = list(fields)[0]
                 db_column = field.db_column if field.db_column else field_name
                 missing_langs = self.get_missing_languages(db_column, db_table)
-                if missing_langs:
-                    found_missing_fields = True
-                    field_full_name = '%s.%s' % (model_full_name, field_name)
+                if not missing_langs:
+                    continue
+                found_missing_fields = True
+                field_full_name = '%s.%s' % (model_full_name, field_name)
+                if self.verbosity > 0:
+                    self.stdout.write('Missing translation columns for field "%s": %s' % (
+                        field_full_name, ', '.join(missing_langs)))
+                statements = self.get_add_column_statements(field_name, missing_langs, model)
+                if self.interactive or self.verbosity > 0:
+                    self.stdout.write('\nStatements to be executed for "%s":' % field_full_name)
+                    for statement in statements:
+                        self.stdout.write('   %s' % statement)
+                if self.interactive:
+                    answer = None
+                    prompt = '\nAre you sure that you want to execute the printed statements: (y/n) [n]: '
+                    while answer not in ('', 'y', 'n', 'yes', 'no'):
+                        answer = moves.input(prompt).strip()
+                        prompt = 'Please answer yes or no: '
+                    execute = (answer == 'y' or answer == 'yes')
+                else:
+                    execute = True
+                if execute:
                     if self.verbosity > 0:
-                        self.stdout.write('Missing translation columns for field "%s": %s' % (
-                            field_full_name, ', '.join(missing_langs)))
-                    statements = self.get_add_column_statements(field_name, missing_langs, model)
-                    if self.interactive or self.verbosity > 0:
-                        self.stdout.write('\nStatements to be executed for "%s":' % field_full_name)
-                        for statement in statements:
-                            self.stdout.write('   %s' % statement)
-                    if self.interactive:
-                        answer = None
-                        prompt = '\nAre you sure that you want to execute the printed statements: (y/n) [n]: '
-                        while answer not in ('', 'y', 'n', 'yes', 'no'):
-                            answer = moves.input(prompt).strip()
-                            prompt = 'Please answer yes or no: '
-                        execute = (answer == 'y' or answer == 'yes')
-                    else:
-                        execute = True
-                    if execute:
-                        if self.verbosity > 0:
-                            self.stdout.write('Executing statements...')
-                        for statement in statements:
-                            self.cursor.execute(statement)
-                        if self.verbosity > 0:
-                            self.stdout.write('Done')
-                    else:
-                        if self.verbosity > 0:
-                            self.stdout.write('Statements not executed')
+                        self.stdout.write('Executing statements...')
+                    for statement in statements:
+                        self.cursor.execute(statement)
+                    if self.verbosity > 0:
+                        self.stdout.write('Done')
+                else:
+                    if self.verbosity > 0:
+                        self.stdout.write('Statements not executed')
 
         if django.VERSION < (1, 6) and found_missing_fields:
             transaction.commit_unless_managed()
