@@ -23,6 +23,7 @@ from django.db.models.fields.files import FieldFile
 from django.test import TestCase, TransactionTestCase
 from django.test.utils import override_settings
 from django.utils import six
+from django.utils import translation as django_translation
 from django.utils.translation import get_language, override, trans_real
 
 try:
@@ -40,7 +41,9 @@ from modeltranslation.tests.test_settings import TEST_SETTINGS
 from modeltranslation.utils import (auto_populate, build_css_class, build_localized_fieldname,
                                     fallbacks, resolution_order)
 
-models = translation = None
+# Note that these globals will be updated after test models get reloaded and
+# repatched (with overriden languages).
+from . import models, translation
 
 # None of the following tests really depend on the content of the request,
 # so we'll just pass in None.
@@ -70,7 +73,7 @@ def reload_app(app_name):
     variables) imported from the reloaded app ``models`` or ``translation``
     modules will become stale; please use sparringly.
     """
-    app_label = app_name.rsplit('.', 1)[-1]
+    app_label = app_name.rpartition('.')[2]
     old_models = sys.modules.pop('%s.models' % app_name, None)
     sys.modules.pop('%s.translation' % app_name, None)
     if django.VERSION >= (1, 7):
@@ -98,48 +101,54 @@ def default_fallback():
 
 @override_settings(**TEST_SETTINGS)
 class ModeltranslationTransactionTestBase(TransactionTestCase):
+    """
+    Dynamically loads ``TEST_APPs`` and enforces a fixed languages set for
+    modeltranslation tests.
+    """
     urls = 'modeltranslation.tests.urls'
     synced = False
 
     @classmethod
     def setUpClass(cls):
-        """
-        Prepare database:
-        * Call syncdb to create tables for tests.models (since during
-        default testrunner's db creation modeltranslation.tests was not in INSTALLED_APPS
-        """
         super(ModeltranslationTransactionTestBase, cls).setUpClass()
-        if not ModeltranslationTestBase.synced:
-            # In order to perform only one syncdb
-            ModeltranslationTestBase.synced = True
-            with override_settings(**TEST_SETTINGS):
-                # 1. Reload translation in case USE_I18N was False
-                from django.utils import translation as dj_trans
-                imp.reload(dj_trans)
 
-                # 2. Reload MT because LANGUAGES likely changed.
-                imp.reload(mt_settings)
-                imp.reload(translator)
-                imp.reload(admin)
+        if ModeltranslationTransactionTestBase.synced:
+            # One round of reloads and syncdb is enough.
+            return
+        ModeltranslationTransactionTestBase.synced = True
 
-                # 3. Reset test models (because autodiscover have already run, those models
-                #    have translation fields, but for languages previously defined. We want
-                #    to be sure that 'de' and 'en' are available)
-                for app_name in TEST_SETTINGS['TEST_APPS']:
-                    reload_app(app_name)
+        with override_settings(**TEST_SETTINGS):
+            # Reload Django translation in case USE_I18N was false.
+            imp.reload(django_translation)
 
-                # 4. Autodiscover
-                handle_translation_registrations()
+            # LANGUAGES likely changed, so we need to reload modeltranslation
+            # settings and rebind them in any module that holds a reference to
+            # the pre-existing copy.
+            old_mt_settings = mt_settings
+            imp.reload(mt_settings)
+            for module in sys.modules.values():
+                for k, v in inspect.getmembers(module, lambda obj: obj is old_mt_settings):
+                    module.__dict__[k] = mt_settings
 
-                # 5. Syncdb (``migrate=False`` in case of south)
-                call_command('syncdb', verbosity=0, migrate=False, interactive=False,
-                             database=connections[DEFAULT_DB_ALIAS].alias, load_initial_data=False)
+            # Reload test models (because autodiscover has already run, those
+            # models have translation fields, but for languages previously
+            # defined; we want to be sure that 'de' and 'en' are available).
+            for app_name in TEST_SETTINGS['TEST_APPS']:
+                reload_app(app_name)
 
-                # A rather dirty trick to import models into module namespace, but not before
-                # tests app has been added into INSTALLED_APPS and loaded
-                # (that's why this is not imported in normal import section)
-                global models, translation
-                from modeltranslation.tests import models, translation  # NOQA
+            # Rediscover reloaded apps translations (redo model patching).
+            handle_translation_registrations()
+
+            # Create database tables for dynamically loaded apps
+            # (``migrate=False`` in case of South).
+            call_command('syncdb', verbosity=0, migrate=False, interactive=False,
+                         database=connections[DEFAULT_DB_ALIAS].alias, load_initial_data=False)
+
+            # Update globals with the reloaded modules. If you import anything
+            # else from test apps remember to update global / local references
+            # after reloading.
+            from . import models, translation
+            globals().update(models=models, translation=translation)
 
     def setUp(self):
         self._old_language = get_language()
