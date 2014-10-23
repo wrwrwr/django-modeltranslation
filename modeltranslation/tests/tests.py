@@ -163,20 +163,18 @@ class ModeltranslationTestBase(ModeltranslationTransactionTestBase, TestCase):
 
 class DirtyRegistryTestBase(ModeltranslationTestBase):
     """
-    Base for tests that need to restore translator registry after they finish.
+    Base for cases that need to restore translator registry after each test.
 
-    Reloading apps (needed when working with various languages sets) may leave
-    dangling copies of model classes in the registry.
+    Registry changes done in some tests may not be suitable for tests that go
+    over everything registered (e.g. ``test_update_command``).
     """
-    @classmethod
-    def setUpClass(cls):
-        super(DirtyRegistryTestBase, cls).setUpClass()
-        cls._registry_copy = copy(translator.translator._registry)
+    def setUp(self):
+        super(DirtyRegistryTestBase, self).setUp()
+        self._registry_copy = copy(translator.translator._registry)
 
-    @classmethod
-    def tearDownClass(cls):
-        translator.translator._registry = cls._registry_copy
-        super(DirtyRegistryTestBase, cls).tearDownClass()
+    def tearDown(self):
+        translator.translator._registry = self._registry_copy
+        super(DirtyRegistryTestBase, self).tearDown()
 
 
 class TestAutodiscover(DirtyRegistryTestBase):
