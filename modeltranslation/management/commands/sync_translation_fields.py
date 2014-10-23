@@ -17,7 +17,7 @@ from django.core.management.color import no_style
 from django.db import connection, transaction
 from django.utils.six import moves
 
-from modeltranslation.settings import AVAILABLE_LANGUAGES
+from modeltranslation import settings as mt_settings
 from modeltranslation.translator import translator
 from modeltranslation.utils import build_localized_fieldname
 
@@ -101,7 +101,7 @@ class Command(NoArgsCommand):
         db_column = field.db_column if field.db_column else field.name
         db_table_description = self.introspection.get_table_description(self.cursor, db_table)
         db_table_columns = [t[0] for t in db_table_description]
-        for lang_code in AVAILABLE_LANGUAGES:
+        for lang_code in mt_settings.AVAILABLE_LANGUAGES:
             lang_column = build_localized_fieldname(db_column, lang_code)
             if lang_column not in db_table_columns:
                 missing_columns[lang_code] = lang_column

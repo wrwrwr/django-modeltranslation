@@ -4,7 +4,7 @@ from optparse import make_option
 from django.db.models import F, Q
 from django.core.management.base import NoArgsCommand
 
-from modeltranslation.settings import DEFAULT_LANGUAGE
+from modeltranslation import settings as mt_settings
 from modeltranslation.translator import translator
 from modeltranslation.utils import build_localized_fieldname
 
@@ -23,14 +23,15 @@ class Command(NoArgsCommand):
         self.app = options.get('app') or options.get('app_config')
 
         if self.verbosity > 0:
-            self.stdout.write("Using default language: %s\n" % DEFAULT_LANGUAGE)
+            self.stdout.write("Using default language: %s\n" % mt_settings.DEFAULT_LANGUAGE)
         models = translator.get_registered_models(abstract=False, app=self.app)
         for model in models:
             if self.verbosity > 0:
                 self.stdout.write("Updating data of model '%s'\n" % model)
             opts = translator.get_options_for_model(model)
             for field_name in opts.fields.keys():
-                def_lang_fieldname = build_localized_fieldname(field_name, DEFAULT_LANGUAGE)
+                def_lang_fieldname = build_localized_fieldname(field_name,
+                                                               mt_settings.DEFAULT_LANGUAGE)
 
                 # We'll only update fields which do not have an existing value
                 q = Q(**{def_lang_fieldname: None})

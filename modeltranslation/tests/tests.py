@@ -33,7 +33,6 @@ except ImportError:
 
 from modeltranslation import admin, settings as mt_settings, translator
 from modeltranslation.forms import TranslationModelForm
-from modeltranslation.management.commands import sync_translation_fields
 from modeltranslation.manager import (MultilingualManager, MultilingualQuerySet,
                                       append_lookup_keys, append_lookup_key)
 from modeltranslation.models import autodiscover, handle_translation_registrations
@@ -1942,7 +1941,6 @@ class ManagementCommandsTests(DirtyRegistryTestBase):
 
         # Adding a new language and syncing should create a new column.
         with reload_override_settings(LANGUAGES=(('de', 'Deutsch'), ('ht', 'Kreyòl ayisyen'),)):
-            imp.reload(sync_translation_fields)
             self.reregister_app('modeltranslation.tests.managed_app')
             if django.VERSION < (1, 8):
                 call_command('sync_translation_fields', app='managed_app',
@@ -1954,7 +1952,6 @@ class ManagementCommandsTests(DirtyRegistryTestBase):
 
         # An app config or models module can also be used in place of a label.
         with reload_override_settings(LANGUAGES=(('de', 'Deutsch'), ('fo', 'føroyskt'),)):
-            imp.reload(sync_translation_fields)
             self.reregister_app('modeltranslation.tests.managed_app')
             if django.VERSION < (1, 7):
                 app_models = app_cache.get_app('managed_app')
