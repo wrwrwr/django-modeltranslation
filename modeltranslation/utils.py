@@ -23,24 +23,25 @@ def get_language():
     return settings.DEFAULT_LANGUAGE
 
 
-def get_app_models(app):
+def get_app_label(app):
     """
-    Returns all app models. The app can be:
-    * an app label -- a string;
+    Returns the label for ``app``. The argument can be:
+    * the app label -- a string;
     * a pre-1.7 app -- a models module;
     * a post-1.7 app -- an AppConfig instance;
     """
-    if django.VERSION < (1, 7):
-        from types import ModuleType
-        from django.db.models import get_app, get_models
-        if not isinstance(app, ModuleType):
-            app = get_app(app)
-        return get_models(app)
+    if django.VERSION >= (1, 7):
+        try:
+            return app.label
+        except AttributeError:
+            return app
     else:
-        from django.apps import AppConfig, apps
-        if not isinstance(app, AppConfig):
-            app = apps.get_app_config(app)
-        return app.get_models()
+        from types import ModuleType
+        if isinstance(app, ModuleType):
+            from django.db.models.loading import cache as app_cache
+            return app_cache._label_for(app)
+        else:
+            return app
 
 
 def get_translation_fields(field):
