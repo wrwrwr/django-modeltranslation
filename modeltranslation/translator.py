@@ -486,9 +486,9 @@ class Translator(object):
         """
         app_label = get_app_label(app)
         return [model for (model, opts) in self._registry.items() if
-                    opts.registered and
-                    (abstract or not model._meta.abstract) and
-                    (app is None or model._meta.app_label == app_label)]
+                opts.registered and
+                (abstract or not model._meta.abstract) and
+                (app is None or model._meta.app_label == app_label)]
 
     def _get_options_for_model(self, model, opts_class=None, **options):
         """
