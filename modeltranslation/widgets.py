@@ -1,3 +1,5 @@
+from __future__ import unicode_literals
+
 from django.contrib.admin.widgets import AdminTextInputWidget, AdminTextareaWidget
 from django.forms.widgets import Widget, TextInput, Textarea, CheckboxInput
 from django.utils.html import format_html
